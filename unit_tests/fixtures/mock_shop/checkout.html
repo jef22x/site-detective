@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html><head><title>Mock Checkout</title></head>
+<body>
+  <h1>Checkout</h1>
+  <form onsubmit="location.href='order-received.html'; return false;">
+    <input id="billing_first_name" placeholder="First name">
+    <input id="billing_email" placeholder="Email">
+    <label><input type="radio" name="payment_method" id="payment_method_cod" value="cod"> Cash on Delivery</label>
+    <button id="place_order" type="submit">Place Order</button>
+  </form>
+</body></html>

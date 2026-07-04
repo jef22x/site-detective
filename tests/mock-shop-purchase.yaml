@@ -1,0 +1,53 @@
+schema_version: 1
+test:
+  id: mock-shop-purchase
+  name: Mock shop purchase flow (Phase 1 smoke test)
+  defaults:
+    timeout_ms: 8000
+    healing: false
+  steps:
+  - type: navigate
+    url: '{{store_url}}/product.html'
+  - type: select
+    intent: The size dropdown on the product page
+    selector: select#size
+    value: Large
+  - type: click
+    intent: The Add to Cart button on the product page
+    selector: button.single_add_to_cart_button
+  - type: type
+    intent: The quantity input for the first cart line item
+    selector: input.qty
+    value: '2'
+    clear_first: true
+  - type: wait
+    intent: The cart totals block, after simulated AJAX recalculation
+    selector: .cart_totals .order-total
+    timeout_ms: 10000
+  - type: assert_element
+    intent: The recalculated order total
+    selector: .cart_totals .order-total
+    text_contains: $50.00
+  - type: screenshot
+    label: cart-after-quantity-change
+  - type: click
+    intent: The Proceed to Checkout link
+    selector: a#proceed
+  - type: type
+    intent: The billing first name field on checkout
+    selector: '#billing_first_name'
+    value: Test
+  - type: type
+    intent: The billing email field on checkout
+    selector: '#billing_email'
+    value: customer@test.local
+  - type: click
+    intent: The Cash on Delivery payment method radio button
+    selector: '#payment_method_cod'
+  - type: click
+    intent: The Place Order button
+    selector: '#place_order'
+  - type: assert_element
+    intent: The order confirmation message on the thank-you page
+    selector: .woocommerce-thankyou-order-received
+    text_contains: Thank you

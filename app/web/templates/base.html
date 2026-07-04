@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>SiteDetective</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <nav class="bg-slate-900 text-white px-6 py-3 flex gap-6 items-center">
+    <a href="/" class="font-bold text-lg">SiteDetective</a>
+    <a href="/" class="hover:text-amber-300">Dashboard</a>
+    <a href="/tests" class="hover:text-amber-300">Tests</a>
+    <a href="/config" class="hover:text-amber-300">Config</a>
+    <span id="live" class="ml-auto text-sm text-slate-300"></span>
+  </nav>
+  <main class="max-w-5xl mx-auto p-6">
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    async function poll() {
+      try {
+        const s = await (await fetch('/api/status')).json();
+        const el = document.getElementById('live');
+        if (s.active) {
+          el.textContent = `Running ${s.test_id}: ${s.done}/${s.total} — ${s.last_step}`;
+          setTimeout(poll, 1000);
+          window._wasActive = true;
+        } else if (window._wasActive) {
+          location.reload();
+        } else if (s.status) {
+          el.textContent = `Last run: ${s.status}`;
+        }
+      } catch (e) {}
+    }
+    poll();
+  </script>
+</body>
+</html>

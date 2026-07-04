@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-xl font-bold mb-1">{{ run.test_id }}
+  <span class="px-2 py-0.5 rounded-full text-white text-sm
+    {% if run.status == 'passed' %}bg-green-600{% else %}bg-red-600{% endif %}">{{ run.status }}</span>
+</h1>
+<p class="text-slate-500 text-sm mb-4">Run <code>{{ run.id }}</code> · {{ run.started_at }}
+  {% if has_report %} · <a class="text-blue-700 hover:underline"
+     href="/artifacts/{{ run.id }}/report.html" target="_blank">Open HTML report</a>{% endif %}
+</p>
+
+{% if healings %}
+<section class="bg-amber-50 border border-amber-300 rounded-lg p-4 mb-6">
+  <h2 class="font-semibold mb-2">Healing audit trail</h2>
+  {% for h in healings %}
+  <p class="text-sm">Step #{{ h.step_index }}: <code>{{ h.old_selector }}</code> →
+    <code>{{ h.proposed_selector }}</code> ({{ "accepted" if h.accepted else "rejected" }})</p>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% for s in steps %}
+<div class="bg-white border border-slate-200 rounded-lg p-4 mb-4">
+  <div class="flex items-center gap-3">
+    <strong>#{{ s.step_index }} {{ s.step_type }}</strong>
+    <span class="px-2 py-0.5 rounded-full text-white text-xs
+      {% if s.status == 'passed' %}bg-green-600{% elif s.status == 'healed_then_passed' %}bg-amber-600
+      {% elif s.status == 'skipped' %}bg-slate-500{% else %}bg-red-600{% endif %}">{{ s.status }}</span>
+    <span class="text-slate-400 text-sm">{{ s.duration_ms }} ms</span>
+  </div>
+  {% if s.error %}<pre class="text-red-600 text-xs mt-2 whitespace-pre-wrap">{{ s.error }}</pre>{% endif %}
+  {% if s.shot_url %}
+  <details class="mt-2"><summary class="cursor-pointer text-sm text-blue-700">Screenshot</summary>
+    <img src="{{ s.shot_url }}" class="mt-2 border border-slate-200 rounded max-w-3xl" loading="lazy">
+  </details>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

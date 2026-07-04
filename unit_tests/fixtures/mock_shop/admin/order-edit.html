@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html><head><title>Mock Order Edit</title></head>
+<body>
+  <h1>Order #1234</h1>
+  <select id="order_status">
+    <option value="wc-processing" selected>Processing</option>
+    <option value="wc-completed">Completed</option>
+  </select>
+  <button class="save_order" onclick="document.getElementById('saved_notice').style.display='block'">Update</button>
+  <p id="saved_notice" style="display:none">Order updated.</p>
+  <button class="refund-items" onclick="document.getElementById('refund_panel').style.display='block'">Refund</button>
+  <div id="refund_panel" style="display:none">
+    <input id="refund_amount" value="0.00">
+    <button class="do-manual-refund">Refund manually</button>
+  </div>
+</body></html>

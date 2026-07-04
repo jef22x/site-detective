@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid md:grid-cols-2 gap-6">
+  <section class="bg-white rounded-lg border border-slate-200 p-5">
+    <h2 class="font-semibold text-lg mb-3">Tests</h2>
+    {% for t in tests %}
+    <div class="flex items-center justify-between py-2 border-b border-slate-100">
+      <a class="text-blue-700 hover:underline" href="/tests/{{ t }}">{{ t }}</a>
+      <form method="post" action="/run">
+        <input type="hidden" name="test" value="{{ t }}">
+        <button class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-3 py-1 rounded"
+                {% if live.active %}disabled{% endif %}>Run</button>
+      </form>
+    </div>
+    {% else %}
+    <p class="text-slate-500">No test definitions in <code>tests/</code>.</p>
+    {% endfor %}
+  </section>
+
+  <section class="bg-white rounded-lg border border-slate-200 p-5">
+    <h2 class="font-semibold text-lg mb-3">Environment</h2>
+    <div id="env" class="text-sm text-slate-600">Checking…</div>
+    <script>
+      fetch('/api/env').then(r => r.json()).then(e => {
+        const b = (ok) => ok ? '✅' : '❌';
+        document.getElementById('env').innerHTML =
+          `${b(e.store.ok)} Store: <code>${e.store.url || '—'}</code><br>` +
+          `${b(e.mailpit.ok)} Mailpit: <code>${e.mailpit.url || '—'}</code><br>` +
+          (e.ollama.enabled
+            ? `${b(e.ollama.ok)} Ollama ${e.ollama.model_present ? '(model ready)' : '(model missing)'}`
+            : `⚪ Ollama healing disabled`);
+      });
+    </script>
+  </section>
+</div>
+
+<section class="bg-white rounded-lg border border-slate-200 p-5 mt-6">
+  <h2 class="font-semibold text-lg mb-3">Run history</h2>
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-500 border-b">
+      <th class="py-2">Test</th><th>Status</th><th>Started</th><th>Run ID</th></tr></thead>
+    <tbody>
+      {% for r in runs %}
+      <tr class="border-b border-slate-100 hover:bg-slate-50">
+        <td class="py-2">{{ r.test_id }}</td>
+        <td><span class="px-2 py-0.5 rounded-full text-white text-xs
+          {% if r.status == 'passed' %}bg-green-600{% elif r.status == 'running' %}bg-blue-600
+          {% else %}bg-red-600{% endif %}">{{ r.status }}</span></td>
+        <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td><a class="text-blue-700 hover:underline font-mono text-xs"
+               href="/runs/{{ r.id }}">{{ r.id[:12] }}…</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="py-4 text-slate-500">No runs yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

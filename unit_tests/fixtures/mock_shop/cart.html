@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html><head><title>Mock Cart</title></head>
+<body>
+  <h1>Cart</h1>
+  <table class="shop_table">
+    <tr>
+      <td>Mock Hoodie</td>
+      <td><input class="qty" type="number" value="1"></td>
+      <td class="line-subtotal">$25.00</td>
+    </tr>
+  </table>
+  <div class="cart_totals" style="display:none">
+    <span class="order-total">$25.00</span>
+  </div>
+  <a id="proceed" href="checkout.html">Proceed to Checkout</a>
+  <script>
+    // Simulate WooCommerce's AJAX subtotal recalculation with a delay.
+    document.querySelector('input.qty').addEventListener('input', function () {
+      var totals = document.querySelector('.cart_totals');
+      totals.style.display = 'none';
+      var qty = parseInt(this.value || '0', 10);
+      setTimeout(function () {
+        document.querySelector('.order-total').textContent = '$' + (qty * 25).toFixed(2);
+        document.querySelector('.line-subtotal').textContent = '$' + (qty * 25).toFixed(2);
+        totals.style.display = 'block';
+      }, 400);
+    });
+  </script>
+</body></html>

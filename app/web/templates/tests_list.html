@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-xl font-bold">Tests</h1>
+  <a href="/tests/new" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">+ New Test</a>
+</div>
+
+<div class="bg-white rounded-lg border border-slate-200">
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-500 border-b">
+      <th class="p-3">Name</th><th>ID</th><th># Steps</th><th>Last modified</th><th class="text-right pr-3">Actions</th>
+    </tr></thead>
+    <tbody>
+      {% for t in tests %}
+      <tr class="border-b border-slate-100 hover:bg-slate-50 {% if not t.valid %}opacity-60{% endif %}" data-id="{{ t.id }}">
+        <td class="p-3">
+          {% if t.valid %}
+          <a class="text-blue-700 hover:underline" href="/tests/{{ t.id }}/edit">{{ t.name }}</a>
+          {% else %}
+          <span title="{{ t.error }}">{{ t.name }}
+            <span class="ml-1 text-xs bg-amber-100 text-amber-800 border border-amber-300 rounded px-1.5 py-0.5 cursor-help">invalid</span></span>
+          {% endif %}
+        </td>
+        <td class="font-mono text-xs">{{ t.id or '—' }}</td>
+        <td>{{ t.steps }}</td>
+        <td class="text-slate-500">{{ t.mtime | int | string }}<script>
+          document.currentScript.parentElement.textContent = new Date({{ t.mtime }} * 1000).toLocaleString();
+        </script></td>
+        <td class="text-right pr-3 whitespace-nowrap">
+          {% if t.valid %}
+          <button onclick="runTest('{{ t.id }}')" {% if live.active %}disabled{% endif %}
+            class="run-btn bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3 py-1 rounded">Run</button>
+          <a href="/tests/{{ t.id }}/edit" class="text-blue-700 hover:underline ml-2">Edit</a>
+          <button onclick="duplicateTest('{{ t.id }}')" class="text-slate-600 hover:underline ml-2">Duplicate</button>
+          <button onclick="deleteTest('{{ t.id }}', this)" class="text-red-600 hover:underline ml-2">Delete</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="p-6 text-center text-slate-500">
+        No tests yet. <a href="/tests/new" class="text-blue-700 hover:underline">Create your first test</a>.
+      </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div id="toast" class="hidden fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded shadow-lg"></div>
+
+<script>
+function toast(msg, isError) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'fixed bottom-6 right-6 text-white px-4 py-2 rounded shadow-lg ' +
+                 (isError ? 'bg-red-600' : 'bg-slate-900');
+  setTimeout(() => el.classList.add('hidden'), 4000);
+}
+async function apiPost(url) {
+  const r = await fetch(url, {method: 'POST'});
+  if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+  return r.json();
+}
+async function runTest(id) {
+  try {
+    await apiPost(`/api/tests/${id}/run`);
+    document.querySelectorAll('.run-btn').forEach(b => b.disabled = true);
+    toast(`Run started: ${id}`);
+    poll();  // kick the live status bar in base.html
+  } catch (e) { toast(e.message, true); }
+}
+async function duplicateTest(id) {
+  try {
+    const res = await apiPost(`/api/tests/${id}/duplicate`);
+    location.reload();
+  } catch (e) { toast(e.message, true); }
+}
+async function deleteTest(id) {
+  if (!confirm(`Delete test "${id}"? This removes the file and cannot be undone.`)) return;
+  try {
+    const r = await fetch(`/api/tests/${id}`, {method: 'DELETE'});
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    document.querySelector(`tr[data-id="${id}"]`).remove();
+    toast(`Deleted ${id}`);
+  } catch (e) { toast(e.message, true); }
+}
+</script>
+{% endblock %}

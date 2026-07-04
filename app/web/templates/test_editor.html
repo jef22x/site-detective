@@ -1,0 +1,393 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-xl font-bold" id="page-title">New Test</h1>
+  <a href="/tests" class="text-slate-500 hover:underline">&larr; Back to tests</a>
+</div>
+
+<!-- Header fields -->
+<section class="bg-white rounded-lg border border-slate-200 p-5 mb-4">
+  <div class="grid md:grid-cols-2 gap-4">
+    <div>
+      <label class="block text-sm font-medium mb-1">Name <span class="text-red-500">*</span></label>
+      <input id="f-name" type="text" maxlength="120" class="w-full border border-slate-300 rounded px-3 py-2"
+             placeholder="e.g. Checkout smoke test">
+      <p class="err text-xs text-red-600 mt-1 hidden" data-err="name"></p>
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1">ID</label>
+      <input id="f-id" type="text" class="w-full border border-slate-300 rounded px-3 py-2 font-mono text-sm"
+             placeholder="auto-generated-from-name">
+      <p class="err text-xs text-red-600 mt-1 hidden" data-err="id"></p>
+    </div>
+    <div class="md:col-span-2">
+      <label class="block text-sm font-medium mb-1">Description</label>
+      <textarea id="f-description" rows="2" class="w-full border border-slate-300 rounded px-3 py-2"></textarea>
+    </div>
+  </div>
+  <details class="mt-3">
+    <summary class="text-sm text-slate-600 cursor-pointer select-none">Advanced defaults</summary>
+    <div class="grid md:grid-cols-3 gap-4 mt-3">
+      <div>
+        <label class="block text-sm font-medium mb-1">Default timeout (ms)</label>
+        <input id="f-timeout" type="number" min="100" value="10000" class="w-full border border-slate-300 rounded px-3 py-2">
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Default retries</label>
+        <input id="f-retries" type="number" min="0" value="1" class="w-full border border-slate-300 rounded px-3 py-2">
+      </div>
+      <div class="flex items-end pb-2">
+        <label class="inline-flex items-center gap-2 text-sm">
+          <input id="f-healing" type="checkbox" checked class="w-4 h-4"> Healing enabled
+        </label>
+      </div>
+    </div>
+  </details>
+</section>
+
+<!-- Steps -->
+<section class="mb-24">
+  <h2 class="font-semibold text-lg mb-2">Steps</h2>
+  <div id="steps"></div>
+  <div id="empty-steps" class="hidden bg-white border border-dashed border-slate-300 rounded-lg p-8 text-center text-slate-500">
+    No steps yet — add your first step.
+  </div>
+  <button onclick="addStep()" class="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">+ Add Step</button>
+</section>
+
+<!-- Sticky save bar -->
+<div class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-lg">
+  <div class="max-w-5xl mx-auto px-6 py-3 flex items-center gap-3">
+    <button id="btn-save" onclick="saveTest(false)"
+      class="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2 rounded font-medium">Save Test</button>
+    <button id="btn-save-run" onclick="saveTest(true)"
+      class="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-5 py-2 rounded font-medium">Save &amp; Run</button>
+    <span id="save-status" class="text-sm text-slate-500"></span>
+    <a id="run-link" href="/" class="hidden text-sm text-blue-700 hover:underline ml-auto">View runs &rarr;</a>
+  </div>
+</div>
+
+<div id="toast" class="hidden fixed bottom-20 right-6 text-white px-4 py-2 rounded shadow-lg"></div>
+
+<script>
+const MODE = "{{ mode }}";                       // "new" | "edit"
+const INITIAL = {{ test_json | safe }};          // TestDefinition or null
+
+const TYPES = {
+  navigate:       {label: 'Go to URL',              fields: ['url']},
+  click:          {label: 'Click element',          fields: ['intent', 'selector', 'context']},
+  type:           {label: 'Type text',              fields: ['intent', 'selector', 'value', 'clear_first']},
+  select:         {label: 'Select dropdown option', fields: ['intent', 'selector', 'value']},
+  wait:           {label: 'Wait for condition',     fields: ['condition', 'intent', 'selector', 'timeout_ms']},
+  assert_element: {label: 'Check element',          fields: ['intent', 'selector', 'exists', 'text_contains']},
+  screenshot:     {label: 'Take screenshot',        fields: ['label']},
+  login:          {label: 'Log in',                 fields: ['context']},
+};
+const REQUIRED = {navigate: ['url'], type: ['value'], select: ['value'], screenshot: ['label']};
+const VAR_FIELDS = new Set(['url', 'value', 'selector']);
+const FIELD_LABELS = {
+  url: 'URL', intent: 'Describe this element in plain English', selector: 'CSS selector',
+  value: 'Value', clear_first: 'Clear field first', condition: 'Condition',
+  exists: 'Element should exist', text_contains: 'Text contains', label: 'Screenshot label',
+  context: 'Browser context', timeout_ms: 'Timeout (ms)',
+};
+
+// steps carry a UI-only `_open` flag, stripped on save
+let steps = [];
+let dirty = false;
+let idTouched = MODE === 'edit';
+
+if (INITIAL) {
+  const t = INITIAL.test;
+  document.getElementById('f-name').value = t.name || '';
+  document.getElementById('f-id').value = t.id;
+  document.getElementById('f-id').readOnly = true;
+  document.getElementById('f-id').classList.add('bg-slate-100');
+  document.getElementById('f-description').value = t.description || '';
+  const d = t.defaults || {};
+  if (d.timeout_ms != null) document.getElementById('f-timeout').value = d.timeout_ms;
+  if (d.retries != null) document.getElementById('f-retries').value = d.retries;
+  document.getElementById('f-healing').checked = d.healing !== false;
+  steps = (t.steps || []).map(s => ({...s, _open: false}));
+  document.getElementById('page-title').textContent = `Edit test: ${t.name || t.id}`;
+}
+
+function markDirty() { dirty = true; }
+window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+document.getElementById('f-name').addEventListener('input', e => {
+  markDirty();
+  if (!idTouched) document.getElementById('f-id').value = slugify(e.target.value);
+});
+document.getElementById('f-id').addEventListener('input', () => { idTouched = true; markDirty(); });
+['f-description', 'f-timeout', 'f-retries', 'f-healing'].forEach(id =>
+  document.getElementById(id).addEventListener('input', markDirty));
+
+function slugify(s) {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ---------- step rendering ----------
+
+function stepSummary(s) {
+  const label = TYPES[s.type].label;
+  const hint = s.intent || s.url || s.label || s.selector || '';
+  return hint ? `${label} — “${hint}”` : label;
+}
+
+function fieldHtml(i, s, f) {
+  const v = s[f];
+  if (f === 'clear_first' || f === 'exists') {
+    const checked = (f === 'exists' ? v !== false : !!v) ? 'checked' : '';
+    return `<label class="inline-flex items-center gap-2 text-sm mt-2 mr-4">
+      <input type="checkbox" ${checked} onchange="setField(${i},'${f}',this.checked); rerenderCard(${i})" class="w-4 h-4">
+      ${FIELD_LABELS[f]}</label>`;
+  }
+  if (f === 'condition' || f === 'context') {
+    const opts = f === 'condition' ? ['visible', 'hidden', 'navigation', 'delay'] : ['customer', 'admin'];
+    const cur = v || opts[0];
+    return `<div class="mt-2"><label class="block text-xs font-medium text-slate-600 mb-1">${FIELD_LABELS[f]}</label>
+      <select onchange="setField(${i},'${f}',this.value); rerenderCard(${i})"
+        class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+        ${opts.map(o => `<option ${o === cur ? 'selected' : ''}>${o}</option>`).join('')}
+      </select></div>`;
+  }
+  if (f === 'timeout_ms') {
+    return `<div class="mt-2"><label class="block text-xs font-medium text-slate-600 mb-1">${FIELD_LABELS[f]}</label>
+      <input type="number" min="100" value="${v ?? ''}" placeholder="default"
+        oninput="setField(${i},'${f}',this.value ? +this.value : null)"
+        class="w-40 border border-slate-300 rounded px-2 py-1.5 text-sm"></div>`;
+  }
+  // hide selector/intent for wait conditions that don't use them
+  if (s.type === 'wait' && (f === 'selector' || f === 'intent') &&
+      (s.condition === 'navigation' || s.condition === 'delay')) return '';
+  const req = (REQUIRED[s.type] || []).includes(f) ||
+              (f === 'intent' && !!s.selector);
+  const varHint = VAR_FIELDS.has(f)
+    ? ' <span class="text-xs bg-slate-100 border border-slate-200 rounded px-1" title="Supports config placeholders like {{ '{{' }}store_url{{ '}}' }}">{ } vars ok</span>' : '';
+  const ph = f === 'intent' ? 'e.g. The Add to Cart button on the product page' : '';
+  return `<div class="mt-2"><label class="block text-xs font-medium text-slate-600 mb-1">
+      ${FIELD_LABELS[f]}${req ? ' <span class="text-red-500">*</span>' : ''}${varHint}</label>
+    <input type="text" value="${esc(v)}" placeholder="${ph}"
+      oninput="setField(${i},'${f}',this.value)"
+      class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm ${f === 'selector' ? 'font-mono' : ''}"
+      data-field="${i}:${f}">
+    <p class="err text-xs text-red-600 mt-1 hidden" data-err="${i}:${f}"></p></div>`;
+}
+
+function cardHtml(s, i) {
+  const open = s._open;
+  const body = !open ? '' : `
+    <div class="px-4 pb-4">
+      <div class="mt-2"><label class="block text-xs font-medium text-slate-600 mb-1">Step type</label>
+        <select onchange="changeType(${i}, this.value)" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+          ${Object.entries(TYPES).map(([k, t]) =>
+            `<option value="${k}" ${k === s.type ? 'selected' : ''}>${t.label}</option>`).join('')}
+        </select></div>
+      ${TYPES[s.type].fields.map(f => fieldHtml(i, s, f)).join('')}
+      <details class="mt-3">
+        <summary class="text-xs text-slate-500 cursor-pointer select-none">Advanced</summary>
+        <div class="flex gap-4 flex-wrap">
+          ${!TYPES[s.type].fields.includes('timeout_ms') ? fieldHtml(i, s, 'timeout_ms') : ''}
+          <div class="mt-2"><label class="block text-xs font-medium text-slate-600 mb-1">Retries</label>
+            <input type="number" min="0" value="${s.retries ?? ''}" placeholder="default"
+              oninput="setField(${i},'retries',this.value ? +this.value : null)"
+              class="w-28 border border-slate-300 rounded px-2 py-1.5 text-sm"></div>
+          <div class="mt-2"><label class="block text-xs font-medium text-slate-600 mb-1">Capture as</label>
+            <input type="text" value="${esc(s.capture_as)}"
+              oninput="setField(${i},'capture_as',this.value || null)"
+              class="w-40 border border-slate-300 rounded px-2 py-1.5 text-sm font-mono"></div>
+        </div>
+      </details>
+    </div>`;
+  return `
+  <div class="step-card bg-white border border-slate-200 rounded-lg mb-2" draggable="true" data-index="${i}">
+    <div class="flex items-center gap-2 px-3 py-2 ${open ? 'border-b border-slate-100' : ''}">
+      <span class="drag-handle cursor-grab text-slate-400 select-none" title="Drag to reorder">⠿</span>
+      <span class="text-slate-400 text-sm w-6">${i + 1}.</span>
+      <button onclick="toggleStep(${i})" class="flex-1 text-left text-sm hover:text-blue-700 truncate">
+        ${esc(stepSummary(s))}</button>
+      <p class="err text-xs text-red-600 hidden" data-err="${i}:_card">has errors</p>
+      <button onclick="duplicateStep(${i})" class="text-slate-500 hover:text-slate-800 text-sm" title="Duplicate">⧉</button>
+      <button onclick="removeStep(${i})" class="text-red-500 hover:text-red-700 text-sm" title="Delete">✕</button>
+    </div>
+    ${body}
+  </div>
+  <div class="insert-slot h-2 group relative" data-insert="${i + 1}">
+    <button onclick="addStep(${i + 1})" title="Insert step here"
+      class="hidden group-hover:block absolute left-1/2 -translate-x-1/2 -top-2 bg-slate-200 hover:bg-blue-600 hover:text-white text-slate-600 rounded-full w-5 h-5 text-xs leading-5">+</button>
+  </div>`;
+}
+
+function render() {
+  const box = document.getElementById('steps');
+  box.innerHTML = steps.map(cardHtml).join('');
+  document.getElementById('empty-steps').classList.toggle('hidden', steps.length > 0);
+  wireDrag();
+}
+function rerenderCard(i) { render(); }  // simple + safe: full rerender on structural field change
+
+function setField(i, f, v) {
+  steps[i][f] = v === '' ? null : v;
+  markDirty();
+  if (f === 'intent' || f === 'url' || f === 'label' || f === 'selector') {
+    // update summary text lazily on next render; no live rerender to keep focus
+  }
+}
+function changeType(i, t) {
+  const keep = {_open: true, type: t};
+  // preserve fields shared with the new type
+  for (const f of TYPES[t].fields) if (steps[i][f] != null) keep[f] = steps[i][f];
+  steps[i] = keep;
+  markDirty(); render();
+}
+function addStep(at) {
+  const s = {type: 'click', _open: true};
+  if (at == null) at = steps.length;
+  steps.splice(at, 0, s);
+  markDirty(); render();
+  document.querySelectorAll('.step-card')[at]?.scrollIntoView({block: 'center', behavior: 'smooth'});
+}
+function duplicateStep(i) {
+  steps.splice(i + 1, 0, {...steps[i], _open: false});
+  markDirty(); render();
+}
+function removeStep(i) { steps.splice(i, 1); markDirty(); render(); }
+function toggleStep(i) { steps[i]._open = !steps[i]._open; render(); }
+
+// ---------- drag & drop reorder ----------
+let dragFrom = null;
+function wireDrag() {
+  document.querySelectorAll('.step-card').forEach(card => {
+    card.addEventListener('dragstart', e => { dragFrom = +card.dataset.index; e.dataTransfer.effectAllowed = 'move'; });
+    card.addEventListener('dragover', e => { e.preventDefault(); card.classList.add('ring-2', 'ring-blue-400'); });
+    card.addEventListener('dragleave', () => card.classList.remove('ring-2', 'ring-blue-400'));
+    card.addEventListener('drop', e => {
+      e.preventDefault();
+      const to = +card.dataset.index;
+      if (dragFrom === null || dragFrom === to) return;
+      const [moved] = steps.splice(dragFrom, 1);
+      steps.splice(to, 0, moved);
+      dragFrom = null; markDirty(); render();
+    });
+  });
+}
+
+// ---------- validation & save ----------
+
+function validate() {
+  const errors = [];
+  const name = document.getElementById('f-name').value.trim();
+  const id = document.getElementById('f-id').value.trim();
+  if (!name) errors.push({key: 'name', msg: 'Name is required.'});
+  if (!id) errors.push({key: 'id', msg: 'ID is required.'});
+  else if (!/^[a-z0-9-]+$/.test(id)) errors.push({key: 'id', msg: 'Only lowercase letters, digits and dashes.'});
+  if (!steps.length) errors.push({key: null, msg: 'Add at least one step.'});
+  steps.forEach((s, i) => {
+    for (const f of REQUIRED[s.type] || [])
+      if (!s[f]) errors.push({key: `${i}:${f}`, msg: 'Required.', step: i});
+    if (s.selector && !s.intent &&
+        !(s.type === 'wait' && (s.condition === 'navigation' || s.condition === 'delay')))
+      errors.push({key: `${i}:intent`, msg: 'Required when a selector is set.', step: i});
+  });
+  // paint
+  document.querySelectorAll('.err').forEach(el => { el.classList.add('hidden'); el.textContent = el.dataset.err.endsWith('_card') ? 'has errors' : ''; });
+  for (const e of errors) {
+    if (e.step != null && !steps[e.step]._open) {
+      const badge = document.querySelector(`[data-err="${e.step}:_card"]`);
+      if (badge) badge.classList.remove('hidden');
+    }
+    const el = document.querySelector(`[data-err="${CSS.escape(e.key ?? '')}"]`);
+    if (el) { el.textContent = e.msg; el.classList.remove('hidden'); }
+  }
+  return errors;
+}
+
+function buildPayload() {
+  const cleanSteps = steps.map(s => {
+    const out = {type: s.type};
+    const fields = [...TYPES[s.type].fields, 'timeout_ms', 'retries', 'capture_as'];
+    for (const f of fields) {
+      let v = s[f];
+      if (v === null || v === undefined || v === '') continue;
+      if (f === 'exists' && v === true) { out[f] = true; continue; }
+      out[f] = v;
+    }
+    if (s.type === 'assert_element') out.exists = s.exists !== false;
+    return out;
+  });
+  return {
+    schema_version: 1,
+    test: {
+      id: document.getElementById('f-id').value.trim(),
+      name: document.getElementById('f-name').value.trim(),
+      description: document.getElementById('f-description').value.trim(),
+      defaults: {
+        timeout_ms: +document.getElementById('f-timeout').value || 10000,
+        retries: Math.max(0, +document.getElementById('f-retries').value || 0),
+        healing: document.getElementById('f-healing').checked,
+      },
+      steps: cleanSteps,
+    },
+  };
+}
+
+function toast(msg, isError) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'fixed bottom-20 right-6 text-white px-4 py-2 rounded shadow-lg ' +
+                 (isError ? 'bg-red-600' : 'bg-slate-900');
+  setTimeout(() => el.classList.add('hidden'), 4000);
+}
+
+async function saveTest(andRun) {
+  const errors = validate();
+  if (errors.length) {
+    toast(errors[0].msg + (errors.length > 1 ? ` (+${errors.length - 1} more)` : ''), true);
+    const firstStep = errors.find(e => e.step != null);
+    if (firstStep != null && !steps[firstStep.step]._open) { steps[firstStep.step]._open = true; render(); }
+    return;
+  }
+  const payload = buildPayload();
+  const isNew = MODE === 'new' && !window._savedOnce;
+  const url = isNew ? '/api/tests' : `/api/tests/${payload.test.id}`;
+  try {
+    const r = await fetch(url, {
+      method: isNew ? 'POST' : 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      const detail = (await r.json()).detail;
+      throw new Error(typeof detail === 'string' ? detail
+        : detail.map(d => `${(d.loc || []).join('.')}: ${d.msg}`).join('; '));
+    }
+    window._savedOnce = true;
+    dirty = false;
+    document.getElementById('f-id').readOnly = true;
+    document.getElementById('f-id').classList.add('bg-slate-100');
+    document.getElementById('save-status').textContent =
+      `Saved at ${new Date().toLocaleTimeString()}`;
+    toast('Test saved');
+    if (andRun) {
+      const rr = await fetch(`/api/tests/${payload.test.id}/run`, {method: 'POST'});
+      if (!rr.ok) throw new Error((await rr.json()).detail || rr.statusText);
+      toast('Run started — progress shown in the top bar');
+      document.getElementById('run-link').classList.remove('hidden');
+      poll();
+    }
+  } catch (e) { toast(e.message, true); }
+}
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveTest(false); }
+});
+
+render();
+if (MODE === 'new' && steps.length === 0) addStep();
+</script>
+{% endblock %}
