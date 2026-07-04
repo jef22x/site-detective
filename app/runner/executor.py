@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from ..config import mask_secrets, SECRET_KEYS
 from ..db import HealingEvent, Run, StepResult
+from ..logging_utils import log_error
 from ..schemas import Step, TestDefinition
 from . import healing
 from .steps import AssertionFailure, execute_step
@@ -38,11 +39,12 @@ class RunOutcome:
     status: str  # passed | failed | error
     steps: List[StepOutcome] = field(default_factory=list)
     reports_dir: str = ""
+    error: str | None = None  # set when status == "error" (unexpected crash)
 
 
 def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
              session_factory: sessionmaker[Session], reports_root: str | Path,
-             headless: bool = True, on_step=None) -> RunOutcome:
+             headless: bool = True, on_step=None, logs_root: str | Path = "logs") -> RunOutcome:
     test = test_def.test
     snapshot = {k: ("***" if k in SECRET_KEYS else v) for k, v in cfg.items()}
 
@@ -58,49 +60,61 @@ def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
 
     outcome = RunOutcome(run_id=run_id, status="passed", reports_dir=str(run_dir))
     failed = False
+    crash_error: str | None = None
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=headless)
-        contexts: Dict[str, Any] = {}
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=headless)
+            contexts: Dict[str, Any] = {}
 
-        def page_for(ctx_name: str):
-            if ctx_name not in contexts:
-                ctx = browser.new_context(viewport={"width": 1920, "height": 1080})
-                contexts[ctx_name] = ctx.new_page()
-            return contexts[ctx_name]
+            def page_for(ctx_name: str):
+                if ctx_name not in contexts:
+                    ctx = browser.new_context(viewport={"width": 1920, "height": 1080})
+                    contexts[ctx_name] = ctx.new_page()
+                return contexts[ctx_name]
 
-        try:
-            for i, step in enumerate(test.steps):
-                if failed:
-                    outcome.steps.append(StepOutcome(i, step.type, "skipped"))
-                    continue
+            try:
+                for i, step in enumerate(test.steps):
+                    if failed:
+                        outcome.steps.append(StepOutcome(i, step.type, "skipped"))
+                        continue
 
-                page = page_for(step.context)
-                timeout = step.timeout_ms or test.defaults.timeout_ms
-                retries = step.retries if step.retries is not None else test.defaults.retries
-                started = time.monotonic()
-                result = _run_one_step(page, step, i, cfg, timeout, retries,
-                                       test.defaults.healing, shots_dir, run_id,
-                                       session_factory)
-                result.duration_ms = int((time.monotonic() - started) * 1000)
+                    page = page_for(step.context)
+                    timeout = step.timeout_ms or test.defaults.timeout_ms
+                    retries = step.retries if step.retries is not None else test.defaults.retries
+                    started = time.monotonic()
+                    result = _run_one_step(page, step, i, cfg, timeout, retries,
+                                           test.defaults.healing, shots_dir, run_id,
+                                           session_factory)
+                    result.duration_ms = int((time.monotonic() - started) * 1000)
 
-                label = step.label or f"step_{i:03d}_{step.type}"
-                shot = shots_dir / f"{label}.png"
-                try:
-                    page.screenshot(path=str(shot), full_page=False)
-                    result.screenshot = str(shot)
-                except Exception:
-                    pass  # a crashed page must not mask the real step error
+                    label = step.label or f"step_{i:03d}_{step.type}"
+                    shot = shots_dir / f"{label}.png"
+                    try:
+                        page.screenshot(path=str(shot), full_page=False)
+                        result.screenshot = str(shot)
+                    except Exception:
+                        pass  # a crashed page must not mask the real step error
 
-                outcome.steps.append(result)
-                if on_step:
-                    on_step(result, len(test.steps))
-                if result.status == "failed":
-                    failed = True
-        finally:
-            browser.close()
+                    outcome.steps.append(result)
+                    if on_step:
+                        on_step(result, len(test.steps))
+                    if result.status == "failed":
+                        failed = True
+                        log_error(f"run={run_id} step={i} ({step.type}) failed: "
+                                 f"{mask_secrets(result.error, cfg)}", logs_root)
+            finally:
+                browser.close()
+    except Exception as e:
+        crash_error = "".join(traceback.format_exception(type(e), e, e.__traceback__)).strip()
+        log_error(f"run={run_id} errored: {mask_secrets(crash_error, cfg)}", logs_root)
 
-    outcome.status = "failed" if failed else "passed"
+    if crash_error is not None:
+        outcome.status = "error"
+        outcome.error = mask_secrets(crash_error, cfg)
+    else:
+        outcome.status = "failed" if failed else "passed"
+
     with session_factory() as db:
         run = db.get(Run, run_id)
         run.status = outcome.status

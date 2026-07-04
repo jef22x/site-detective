@@ -42,6 +42,8 @@ def main(argv=None) -> int:
         if s.error:
             line += f"  -- {s.error}"
         print(line)
+    if outcome.error:
+        print(f"Error: {outcome.error}")
     print(f"Artifacts: {outcome.reports_dir}")
     print(f"Report:    {report}")
     return 0 if outcome.status == "passed" else 1

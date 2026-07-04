@@ -23,6 +23,7 @@ htmlcov/
 # Generated data / outputs
 data/
 reports/
+logs/
 
 # Environment / secrets
 .env
