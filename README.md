@@ -11,7 +11,6 @@ re-locate elements when a stored selector breaks.
 - **Web UI** — dashboard, live run monitoring, test editor with validation, config management, HTML reports
 - **Run history** — SQLite-backed run tracking with audit trail and healing events
 - **Multi-context flows** — customer and admin contexts in a single test
-- **Docker staging** — docker-compose stack for system testing
 - **No external dependencies** — Ollama runs locally; runs work offline if Ollama is unavailable
 
 ## Requirements
@@ -55,15 +54,23 @@ screenshots + `report.html` in `reports/<run-id>/`.
 14 tests: runner happy/failure paths, two-context lifecycle, healing matrix
 (healed / bounded failure / Ollama offline), web routes, secret masking.
 
-## Staging stack (system tests)
+## Use Cases
+
+**Local E2E testing**: Point tests at your own staging environment via `target_url` in
+`config/settings.yaml`. Tests run offline; Ollama is optional and gracefully disabled
+if unavailable.
+
+**WooCommerce testing**: If you're testing a WooCommerce store and don't have a staging
+environment, you can set up a local WordPress + WooCommerce stack with Docker:
 
 ```powershell
-cd docker
-docker compose up -d
-sh provision.sh   # installs WooCommerce, sample product, COD, Mailpit SMTP
+docker compose -f path/to/docker-compose.yml up -d
+docker compose -f path/to/docker-compose.yml exec wpcli wp core install --url="http://localhost:8080" --title="Test Store" --admin_user=admin --admin_password=pass --admin_email=admin@test.local --skip-email
+docker compose -f path/to/docker-compose.yml exec wpcli wp plugin install woocommerce --activate
 ```
 
-Store: http://localhost:8080 · Mailpit: http://localhost:8025
+Then set `target_url: "http://localhost:8080"` and run tests. The stack includes
+Mailpit (`http://localhost:8025`) to catch outgoing emails.
 
 ## Healing
 
