@@ -80,7 +80,7 @@ const TYPES = {
   select:         {label: 'Select dropdown option', fields: ['intent', 'selector', 'value']},
   wait:           {label: 'Wait for condition',     fields: ['condition', 'intent', 'selector', 'timeout_ms']},
   assert_element: {label: 'Check element',          fields: ['intent', 'selector', 'exists', 'text_contains']},
-  screenshot:     {label: 'Take screenshot',        fields: ['label']},
+  screenshot:     {label: 'Take screenshot',        fields: ['label', 'full_page']},
   login:          {label: 'Log in',                 fields: ['context']},
 };
 const REQUIRED = {navigate: ['url'], type: ['value'], select: ['value'], screenshot: ['label']};
@@ -89,6 +89,7 @@ const FIELD_LABELS = {
   url: 'URL', intent: 'Describe this element in plain English', selector: 'CSS selector',
   value: 'Value', clear_first: 'Clear field first', condition: 'Condition',
   exists: 'Element should exist', text_contains: 'Text contains', label: 'Screenshot label',
+  full_page: 'Capture whole page',
   context: 'Browser context', timeout_ms: 'Timeout (ms)',
 };
 
@@ -141,7 +142,7 @@ function stepSummary(s) {
 
 function fieldHtml(i, s, f) {
   const v = s[f];
-  if (f === 'clear_first' || f === 'exists') {
+  if (f === 'clear_first' || f === 'exists' || f === 'full_page') {
     const checked = (f === 'exists' ? v !== false : !!v) ? 'checked' : '';
     return `<label class="inline-flex items-center gap-2 text-sm mt-2 mr-4">
       <input type="checkbox" ${checked} onchange="setField(${i},'${f}',this.checked); rerenderCard(${i})" class="w-4 h-4">

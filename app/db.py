@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import ForeignKey, create_engine
+from sqlalchemy import ForeignKey, create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 
@@ -26,6 +26,7 @@ class Run(Base):
     finished_at: Mapped[datetime | None] = mapped_column(default=None)
     status: Mapped[str] = mapped_column(default="running")  # running|passed|failed|error
     config_snapshot: Mapped[str] = mapped_column(default="{}")  # secrets masked
+    error: Mapped[str | None] = mapped_column(default=None)  # crash traceback when status == "error"
 
 
 class StepResult(Base):
@@ -60,4 +61,9 @@ def init_db(db_path: str | Path) -> sessionmaker[Session]:
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(f"sqlite:///{db_path}")
     Base.metadata.create_all(engine)
+    # Lightweight migration: create_all never alters existing tables, so add
+    # columns introduced after a database was first created.
+    if "error" not in {c["name"] for c in inspect(engine).get_columns("runs")}:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE runs ADD COLUMN error TEXT"))
     return sessionmaker(engine, expire_on_commit=False)

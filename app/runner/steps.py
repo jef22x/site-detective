@@ -64,7 +64,7 @@ def execute_step(page: Page, step: Step, cfg: Dict[str, Any], timeout_ms: int,
                 )
 
     elif step.type == "screenshot":
-        pass  # the executor screenshots after every step; this forces one with a label
+        pass  # the executor takes the actual screenshot for this step type
 
     elif step.type == "login":
         # Built-in composite step: deterministic wp-admin login from config.

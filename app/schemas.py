@@ -27,6 +27,7 @@ class Step(BaseModel):
     text_contains: Optional[str] = None
     capture_as: Optional[str] = None  # parsed but unused in v1
     label: Optional[str] = None
+    full_page: bool = False  # screenshot steps: capture the entire page
     role: Optional[str] = None
     timeout_ms: Optional[int] = None
     retries: Optional[int] = None

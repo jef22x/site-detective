@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block content %}
+{% if error %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-xl font-bold">{{ file }}</h1>
+  <a href="/tests" class="text-slate-500 hover:underline">&larr; Back to tests</a>
+</div>
+<div class="bg-red-50 border border-red-300 text-red-700 rounded p-3 mb-3 text-sm whitespace-pre-wrap">This test file could not be parsed: {{ error }}</div>
+<pre class="bg-white border border-slate-200 rounded-lg p-4 text-sm font-mono overflow-x-auto">{{ raw }}</pre>
+{% else %}
+{% set t = td.test %}
+{% set type_labels = {
+  'navigate': 'Go to URL', 'click': 'Click element', 'type': 'Type text',
+  'select': 'Select dropdown option', 'wait': 'Wait for condition',
+  'assert_element': 'Check element', 'screenshot': 'Take screenshot', 'login': 'Log in'} %}
+
+<div class="flex items-start justify-between mb-4">
+  <div>
+    <h1 class="text-2xl font-bold">{{ t.name or t.id }}</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      <span class="font-mono bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">{{ t.id }}</span>
+      <span class="ml-2">{{ t.steps | length }} step{{ '' if t.steps | length == 1 else 's' }}</span>
+      <span class="ml-2 text-slate-400">file: {{ file }}</span>
+    </p>
+  </div>
+  <div class="flex items-center gap-3">
+    <button onclick="runTest('{{ t.id }}')" {% if live.active %}disabled{% endif %}
+      class="run-btn bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 py-2 rounded font-medium">Run</button>
+    <a href="/tests/{{ t.id }}/edit"
+      class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-medium">Edit</a>
+    <a href="/tests" class="text-slate-500 hover:underline">&larr; Back</a>
+  </div>
+</div>
+
+{% if t.description %}
+<p class="text-slate-700 mb-4">{{ t.description }}</p>
+{% endif %}
+
+<section class="bg-white rounded-lg border border-slate-200 p-4 mb-6">
+  <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">Defaults</h2>
+  <div class="flex gap-8 text-sm">
+    <div><span class="text-slate-500">Timeout:</span> {{ t.defaults.timeout_ms }} ms</div>
+    <div><span class="text-slate-500">Retries:</span> {{ t.defaults.retries }}</div>
+    <div><span class="text-slate-500">Healing:</span>
+      {% if t.defaults.healing %}<span class="text-emerald-700">enabled</span>
+      {% else %}<span class="text-slate-500">disabled</span>{% endif %}</div>
+  </div>
+</section>
+
+<h2 class="font-semibold text-lg mb-2">Steps</h2>
+<div class="space-y-2">
+  {% for s in t.steps %}
+  <div class="bg-white border border-slate-200 rounded-lg px-4 py-3">
+    <div class="flex items-center gap-3">
+      <span class="text-slate-400 text-sm w-6 text-right">{{ loop.index }}.</span>
+      <span class="font-medium">{{ type_labels.get(s.type, s.type) }}</span>
+      {% if s.context != 'customer' %}
+      <span class="text-xs bg-purple-100 text-purple-800 border border-purple-200 rounded px-1.5 py-0.5">{{ s.context }}</span>
+      {% endif %}
+      {% if s.type == 'screenshot' and s.full_page %}
+      <span class="text-xs bg-slate-100 text-slate-600 border border-slate-200 rounded px-1.5 py-0.5">whole page</span>
+      {% endif %}
+    </div>
+    {% if s.intent %}<p class="ml-9 mt-1 text-sm text-slate-700">{{ s.intent }}</p>{% endif %}
+    <div class="ml-9 mt-1 text-sm text-slate-500 space-y-0.5">
+      {% if s.url %}<div>URL: <span class="font-mono text-slate-700">{{ s.url }}</span></div>{% endif %}
+      {% if s.selector %}<div>Selector: <span class="font-mono text-slate-700">{{ s.selector }}</span></div>{% endif %}
+      {% if s.value is not none %}<div>Value: <span class="font-mono text-slate-700">{{ s.value }}</span></div>{% endif %}
+      {% if s.type == 'wait' %}<div>Condition: {{ s.condition }}</div>{% endif %}
+      {% if s.type == 'assert_element' %}
+      <div>Expectation: element should {{ 'exist' if s.exists else 'be absent' }}{% if s.text_contains %} and contain “{{ s.text_contains }}”{% endif %}</div>
+      {% endif %}
+      {% if s.label %}<div>Label: {{ s.label }}</div>{% endif %}
+      {% if s.timeout_ms %}<div>Timeout: {{ s.timeout_ms }} ms</div>{% endif %}
+      {% if s.retries is not none %}<div>Retries: {{ s.retries }}</div>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div id="toast" class="hidden fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded shadow-lg"></div>
+<script>
+function toast(msg, isError) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'fixed bottom-6 right-6 text-white px-4 py-2 rounded shadow-lg ' +
+                 (isError ? 'bg-red-600' : 'bg-slate-900');
+  setTimeout(() => el.classList.add('hidden'), 4000);
+}
+async function runTest(id) {
+  try {
+    const r = await fetch(`/api/tests/${id}/run`, {method: 'POST'});
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    document.querySelectorAll('.run-btn').forEach(b => b.disabled = true);
+    toast(`Run started: ${id}`);
+    poll();
+  } catch (e) { toast(e.message, true); }
+}
+</script>
+{% endif %}
+{% endblock %}

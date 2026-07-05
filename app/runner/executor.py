@@ -1,5 +1,5 @@
 """Deterministic test runner (spec F-4): executes steps in order via
-stored selectors, screenshots after every step, records results to
+stored selectors, screenshots on screenshot steps, records results to
 SQLite, and only consults healing on selector failure."""
 from __future__ import annotations
 
@@ -88,13 +88,25 @@ def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
                                            session_factory)
                     result.duration_ms = int((time.monotonic() - started) * 1000)
 
-                    label = step.label or f"step_{i:03d}_{step.type}"
-                    shot = shots_dir / f"{label}.png"
-                    try:
-                        page.screenshot(path=str(shot), full_page=False)
-                        result.screenshot = str(shot)
-                    except Exception:
-                        pass  # a crashed page must not mask the real step error
+                    if step.selector:
+                        # Center the acted-on element so a following screenshot
+                        # step captures the relevant area.
+                        try:
+                            page.locator(step.selector).first.evaluate(
+                                "el => el.scrollIntoView({block: 'center', inline: 'center'})",
+                                timeout=2000)
+                        except Exception:
+                            pass
+                    if step.type == "screenshot":
+                        label = step.label or f"step_{i:03d}_{step.type}"
+                        shot = shots_dir / f"{label}.png"
+                        try:
+                            if step.full_page:
+                                _prepare_full_page(page)
+                            page.screenshot(path=str(shot), full_page=step.full_page)
+                            result.screenshot = str(shot)
+                        except Exception:
+                            pass  # a crashed page must not mask the real step error
 
                     outcome.steps.append(result)
                     if on_step:
@@ -118,6 +130,7 @@ def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
     with session_factory() as db:
         run = db.get(Run, run_id)
         run.status = outcome.status
+        run.error = outcome.error
         from ..db import _now
         run.finished_at = _now()
         for s in outcome.steps:
@@ -127,6 +140,47 @@ def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
                               error=mask_secrets(s.error, cfg)))
         db.commit()
     return outcome
+
+
+def _prepare_full_page(page) -> None:
+    """Force lazy-loaded content below the fold to render before a
+    full-page screenshot: step-scroll to the bottom, wait for the network
+    to settle and images to decode, then restore the scroll position."""
+    try:
+        page.evaluate(
+            """async () => {
+                const delay = ms => new Promise(r => setTimeout(r, ms));
+                const step = window.innerHeight;
+                let pos = 0;
+                let passes = 0;
+                // Height can grow as content loads, so re-read it each pass;
+                // cap passes so infinite-scroll pages can't hang the run.
+                while (pos < document.body.scrollHeight && passes++ < 100) {
+                    pos += step;
+                    window.scrollTo(0, pos);
+                    await delay(200);
+                }
+                window.scrollTo(0, document.body.scrollHeight);
+                await delay(300);
+                // Eagerly load anything still marked lazy, then wait for
+                // every image to finish decoding.
+                document.querySelectorAll('img[loading="lazy"]')
+                        .forEach(img => img.loading = 'eager');
+                await Promise.allSettled(
+                    Array.from(document.images)
+                         .filter(img => !img.complete)
+                         .map(img => img.decode().catch(() => {})));
+                window.scrollTo(0, 0);
+            }"""
+        )
+        try:
+            page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass  # busy pages (polling, analytics) may never go idle
+        # Let any scroll-triggered animations/entrance effects finish.
+        page.wait_for_timeout(500)
+    except Exception:
+        pass  # best effort; never let prep break the screenshot itself
 
 
 def _run_one_step(page, step: Step, index: int, cfg, timeout: int, retries: int,

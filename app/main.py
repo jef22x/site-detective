@@ -39,6 +39,17 @@ _run_lock = threading.Lock()
 TEST_ID_RE = re.compile(r"^[a-z0-9-]+$")
 
 
+def _with_duration(runs):
+    """Attach a human-readable total duration to Run rows for templates."""
+    for r in runs:
+        if r.finished_at:
+            secs = (r.finished_at - r.started_at).total_seconds()
+            r.duration = f"{int(secs // 60)}m {secs % 60:.1f}s" if secs >= 60 else f"{secs:.1f}s"
+        else:
+            r.duration = None
+    return runs
+
+
 def _list_tests():
     return sorted(p.name for p in TESTS_DIR.glob("*.y*ml")) + \
            sorted(p.name for p in TESTS_DIR.glob("*.json"))
@@ -101,7 +112,7 @@ def dashboard(request: Request):
     with session_factory() as db:
         runs = db.query(Run).order_by(Run.started_at.desc()).limit(50).all()
     return templates.TemplateResponse(request, "dashboard.html", {
-        "runs": runs, "tests": _list_tests(), "live": LIVE})
+        "runs": _with_duration(runs), "tests": _test_index(), "live": LIVE})
 
 
 @app.post("/run")
@@ -136,6 +147,7 @@ def run_detail(request: Request, run_id: str):
         s.shot_url = (f"/artifacts/{run_id}/screenshots/{Path(s.screenshot_path).name}"
                       if s.screenshot_path else None)
     has_report = (REPORTS_DIR / run_id / "report.html").exists()
+    _with_duration([run])
     return templates.TemplateResponse(request, "run_detail.html", {
         "run": run, "steps": steps, "healings": healings, "has_report": has_report})
 
@@ -251,25 +263,21 @@ def api_run_test(test_id: str):
 
 
 @app.get("/tests/{name}", response_class=HTMLResponse)
-def edit_test(request: Request, name: str):
-    path = TESTS_DIR / name
+def show_test(request: Request, name: str):
+    # Accept either a test id or a raw file name.
+    path = _test_file_for(name) or (TESTS_DIR / name)
     if not path.is_file():
         raise HTTPException(404)
-    return templates.TemplateResponse(request, "test_edit.html", {
-        "name": name, "content": path.read_text(encoding="utf-8"), "error": None})
-
-
-@app.post("/tests/{name}", response_class=HTMLResponse)
-def save_test_file(request: Request, name: str, content: str = Form(...)):
-    path = TESTS_DIR / name
     try:
-        TestDefinition.model_validate(yaml.safe_load(content))  # validate before save
-        path.write_text(content, encoding="utf-8")
+        td = load_test(path)
         error = None
     except Exception as e:
+        td = None
         error = str(e)
-    return templates.TemplateResponse(request, "test_edit.html", {
-        "name": name, "content": content, "error": error})
+    return templates.TemplateResponse(request, "test_show.html", {
+        "td": td, "file": path.name, "error": error,
+        "raw": path.read_text(encoding="utf-8") if td is None else None,
+        "live": LIVE})
 
 
 @app.get("/config", response_class=HTMLResponse)
