@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-xl font-bold mb-4">Run history</h1>
+
+<section class="bg-white rounded-lg border border-slate-200 p-5">
+  <div class="overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-500 border-b">
+      <th class="py-2">Test</th><th>Status</th><th>Started</th><th>Duration</th><th>Run ID</th></tr></thead>
+    <tbody id="run-history">
+      {% for r in runs %}
+      <tr data-run="{{ r.id }}" class="border-b border-slate-100 hover:bg-slate-50">
+        <td class="py-2">{{ r.test_id }}
+          {% if r.trigger == 'scheduled' %}<span title="Started by a schedule">🕐</span>{% endif %}</td>
+        <td><span class="px-2 py-0.5 rounded-full text-white text-xs
+          {% if r.status == 'passed' %}bg-green-600{% elif r.status == 'running' %}bg-blue-600
+          {% elif r.status == 'skipped' %}bg-slate-500
+          {% else %}bg-red-600{% endif %}">{{ r.status }}</span></td>
+        <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td class="text-slate-500">{{ r.duration or '—' }}</td>
+        <td><a class="text-blue-700 hover:underline font-mono text-xs"
+               href="/runs/{{ r.id }}">{{ r.id[:12] }}…</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="py-4 text-slate-500">No runs yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if runs_total > runs | length %}
+  <button id="load-more" onclick="loadMoreRuns()"
+    class="mt-3 text-blue-700 hover:underline text-sm">
+    Load 20 more ({{ runs_total - runs | length }} remaining)</button>
+  {% endif %}
+</section>
+
+<div id="toast" class="hidden fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded shadow-lg"></div>
+<script>
+function toast(msg, isError) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'fixed bottom-6 right-6 text-white px-4 py-2 rounded shadow-lg ' +
+                 (isError ? 'bg-red-600' : 'bg-slate-900');
+  setTimeout(() => el.classList.add('hidden'), 4000);
+}
+const STATUS_BG = {passed: 'bg-green-600', running: 'bg-blue-600', skipped: 'bg-slate-500'};
+async function loadMoreRuns() {
+  const tbody = document.getElementById('run-history');
+  const btn = document.getElementById('load-more');
+  btn.disabled = true;
+  try {
+    const offset = tbody.querySelectorAll('tr[data-run]').length;
+    const r = await fetch(`/api/runs?offset=${offset}&limit=20`);
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    for (const run of data.runs) {
+      const tr = document.createElement('tr');
+      tr.dataset.run = run.id;
+      tr.className = 'border-b border-slate-100 hover:bg-slate-50';
+      const badge = STATUS_BG[run.status] || 'bg-red-600';
+      tr.innerHTML =
+        `<td class="py-2"></td>` +
+        `<td><span class="px-2 py-0.5 rounded-full text-white text-xs ${badge}"></span></td>` +
+        `<td></td><td class="text-slate-500"></td>` +
+        `<td><a class="text-blue-700 hover:underline font-mono text-xs" href="/runs/${encodeURIComponent(run.id)}"></a></td>`;
+      tr.children[0].textContent = run.test_id + (run.trigger === 'scheduled' ? ' 🕐' : '');
+      tr.querySelector('span').textContent = run.status;
+      tr.children[2].textContent = run.started_at;
+      tr.children[3].textContent = run.duration || '—';
+      tr.querySelector('a').textContent = run.id.slice(0, 12) + '…';
+      tbody.appendChild(tr);
+    }
+    const shown = tbody.querySelectorAll('tr[data-run]').length;
+    const remaining = data.total - shown;
+    if (remaining > 0) {
+      btn.textContent = `Load 20 more (${remaining} remaining)`;
+      btn.disabled = false;
+    } else {
+      btn.remove();
+    }
+  } catch (e) { toast(e.message, true); btn.disabled = false; }
+}
+</script>
+{% endblock %}

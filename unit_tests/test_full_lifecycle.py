@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def test_full_lifecycle_customer_and_admin(mock_shop_server, tmp_path):
     cfg = {
-        "store_url": mock_shop_server,
+        "starting_url": mock_shop_server,
         "admin_user": "admin",
         "admin_password": "changeme",
         "ollama": {"enabled": False},
@@ -33,7 +33,7 @@ def test_full_lifecycle_customer_and_admin(mock_shop_server, tmp_path):
 
 def test_admin_login_uses_config_credentials(mock_shop_server, tmp_path):
     cfg = {
-        "store_url": mock_shop_server,
+        "starting_url": mock_shop_server,
         "admin_user": "admin",
         "admin_password": "wrong-password",
         "ollama": {"enabled": False},

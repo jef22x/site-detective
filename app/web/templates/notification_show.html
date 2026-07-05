@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-xl font-bold flex items-center gap-2">
+    <span>{{ '🔴' if n.severity == 'error' else '⚠️' }}</span> {{ n.title }}
+  </h1>
+  <a href="/notifications" class="text-slate-500 hover:underline">&larr; Back</a>
+</div>
+
+<section class="bg-white rounded-lg border border-slate-200 p-5">
+  <div class="text-sm text-slate-500 mb-4 flex flex-wrap gap-x-6 gap-y-1">
+    <span>Kind: <span class="font-mono">{{ n.kind }}</span></span>
+    <span>Severity: {{ n.severity }}</span>
+    <span>Created: {{ n.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</span>
+    {% if n.read_at %}<span>Read: {{ n.read_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</span>{% endif %}
+  </div>
+  {% if n.body %}
+  <pre class="text-sm bg-slate-50 border border-slate-200 rounded p-3 whitespace-pre-wrap">{{ n.body }}</pre>
+  {% endif %}
+  <div class="mt-4 flex gap-4 text-sm">
+    {% if n.run_id %}
+    <a href="/runs/{{ n.run_id }}" class="text-blue-700 hover:underline">Run detail &rarr;</a>
+    {% if has_report %}
+    <a href="/artifacts/{{ n.run_id }}/report.html" class="text-blue-700 hover:underline">Artifact report &rarr;</a>
+    {% endif %}
+    {% endif %}
+    {% if n.schedule_id %}
+    <a href="/schedules" class="text-blue-700 hover:underline">Schedules &rarr;</a>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

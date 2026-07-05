@@ -24,6 +24,7 @@ htmlcov/
 data/
 reports/
 logs/
+tests/
 
 # Environment / secrets
 .env

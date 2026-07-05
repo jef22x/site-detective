@@ -5,7 +5,7 @@
   <a href="/tests/new" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">+ New Test</a>
 </div>
 
-<div class="bg-white rounded-lg border border-slate-200">
+<div class="bg-white rounded-lg border border-slate-200 overflow-x-auto">
   <table class="w-full text-sm">
     <thead><tr class="text-left text-slate-500 border-b">
       <th class="p-3">Name</th><th>ID</th><th># Steps</th><th>Last modified</th><th class="text-right pr-3">Actions</th>
@@ -38,7 +38,8 @@
       </tr>
       {% else %}
       <tr><td colspan="5" class="p-6 text-center text-slate-500">
-        No tests yet. <a href="/tests/new" class="text-blue-700 hover:underline">Create your first test</a>.
+        No tests yet. <a href="/tests/new" class="text-blue-700 hover:underline">Create your first test</a>,
+        or <button onclick="createExample()" class="text-blue-700 hover:underline">start from an example</button>.
       </td></tr>
       {% endfor %}
     </tbody>
@@ -66,6 +67,12 @@ async function runTest(id) {
     document.querySelectorAll('.run-btn').forEach(b => b.disabled = true);
     toast(`Run started: ${id}`);
     poll();  // kick the live status bar in base.html
+  } catch (e) { toast(e.message, true); }
+}
+async function createExample() {
+  try {
+    const res = await apiPost('/api/tests/example');
+    location.href = `/tests/${res.id}/edit`;
   } catch (e) { toast(e.message, true); }
 }
 async function duplicateTest(id) {

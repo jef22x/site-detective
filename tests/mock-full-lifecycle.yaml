@@ -1,79 +1,51 @@
 schema_version: 1
-
 test:
   id: mock-full-lifecycle
-  name: "Mock full lifecycle: customer purchase + admin verify/complete/refund"
+  name: 'Mock full lifecycle: customer purchase + admin verify/complete/refund'
+  starting_url: '{{starting_url}}/product.html'
   defaults:
     timeout_ms: 8000
-    retries: 1
     healing: false
-
   steps:
-    # ---- Customer context ----
-    - type: navigate
-      context: customer
-      url: "{{store_url}}/product.html"
-
-    - type: click
-      context: customer
-      intent: "The Add to Cart button on the product page"
-      selector: "button.single_add_to_cart_button"
-
-    - type: click
-      context: customer
-      intent: "The Proceed to Checkout link"
-      selector: "a#proceed"
-
-    - type: click
-      context: customer
-      intent: "The Cash on Delivery payment method radio button"
-      selector: "#payment_method_cod"
-
-    - type: click
-      context: customer
-      intent: "The Place Order button"
-      selector: "#place_order"
-
-    - type: assert_element
-      context: customer
-      intent: "The order confirmation message on the thank-you page"
-      selector: ".woocommerce-thankyou-order-received"
-      exists: true
-
-    # ---- Admin context ----
-    - type: login
-      context: admin
-      role: admin
-
-    - type: assert_element
-      context: admin
-      intent: "The most recent order row in the orders table"
-      selector: "table.wp-list-table tbody tr:first-child"
-      exists: true
-
-    - type: click
-      context: admin
-      intent: "The order number link of the most recent order"
-      selector: "table.wp-list-table tbody tr:first-child a.order-view"
-
-    - type: select
-      context: admin
-      intent: "The order status dropdown on the order edit screen"
-      selector: "select#order_status"
-      value: "wc-completed"
-
-    - type: click
-      context: admin
-      intent: "The Update button that saves the order"
-      selector: "button.save_order"
-
-    - type: click
-      context: admin
-      intent: "The Refund button in the order items panel"
-      selector: "button.refund-items"
-
-    - type: assert_element
-      context: admin
-      intent: "The refund amount input that appears in the refund panel"
-      selector: "#refund_amount"
-      exists: true
+  - type: click
+    intent: The Add to Cart button on the product page
+    selector: button.single_add_to_cart_button
+  - type: click
+    intent: The Proceed to Checkout link
+    selector: a#proceed
+  - type: click
+    intent: The Cash on Delivery payment method radio button
+    selector: '#payment_method_cod'
+  - type: click
+    intent: The Place Order button
+    selector: '#place_order'
+  - type: assert_element
+    intent: The order confirmation message on the thank-you page
+    selector: .woocommerce-thankyou-order-received
+  - type: login
+    context: admin
+  - type: assert_element
+    context: admin
+    intent: The most recent order row in the orders table
+    selector: table.wp-list-table tbody tr:first-child
+  - type: click
+    context: admin
+    intent: The order number link of the most recent order
+    selector: table.wp-list-table tbody tr:first-child a.order-view
+  - type: select
+    context: admin
+    intent: The order status dropdown on the order edit screen
+    selector: select#order_status
+    value: wc-completed
+  - type: click
+    context: admin
+    intent: The Update button that saves the order
+    selector: button.save_order
+  - type: click
+    context: admin
+    intent: The Refund button in the order items panel
+    selector: button.refund-items
+  - type: assert_element
+    context: admin
+    intent: The refund amount input that appears in the refund panel
+    selector: '#refund_amount'

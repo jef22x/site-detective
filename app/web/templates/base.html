@@ -8,10 +8,14 @@
 <body class="bg-slate-50 text-slate-900">
   <nav class="bg-slate-900 text-white px-6 py-3 flex gap-6 items-center">
     <a href="/" class="font-bold text-lg">SiteDetective</a>
-    <a href="/" class="hover:text-amber-300">Dashboard</a>
     <a href="/tests" class="hover:text-amber-300">Tests</a>
+    <a href="/runs" class="hover:text-amber-300">Runs</a>
+    <a href="/schedules" class="hover:text-amber-300">Schedules</a>
     <a href="/config" class="hover:text-amber-300">Config</a>
     <span id="live" class="ml-auto text-sm text-slate-300"></span>
+    <a href="/notifications" class="relative hover:text-amber-300" title="Notifications">
+      🔔<span id="bell-count" class="hidden absolute -top-1.5 -right-2 bg-red-600 text-white text-xs rounded-full px-1.5"></span>
+    </a>
   </nav>
   <main class="max-w-5xl mx-auto p-6">
     {% block content %}{% endblock %}
@@ -20,6 +24,13 @@
     async function poll() {
       try {
         const s = await (await fetch('/api/status')).json();
+        const bell = document.getElementById('bell-count');
+        if (s.unread_notifications > 0) {
+          bell.textContent = s.unread_notifications;
+          bell.classList.remove('hidden');
+        } else {
+          bell.classList.add('hidden');
+        }
         const el = document.getElementById('live');
         if (s.active) {
           el.textContent = `Running ${s.test_id}: ${s.done}/${s.total} — ${s.last_step}`;

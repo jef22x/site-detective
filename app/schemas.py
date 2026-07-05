@@ -52,6 +52,9 @@ class TestBody(BaseModel):
     id: str
     name: str = ""
     description: str = ""
+    # Every run begins by navigating here; falls back to the global
+    # 'starting_url' from settings.yaml when empty.
+    starting_url: Optional[str] = None
     defaults: Defaults = Field(default_factory=Defaults)
     steps: List[Step]
 

@@ -69,7 +69,7 @@ def execute_step(page: Page, step: Step, cfg: Dict[str, Any], timeout_ms: int,
     elif step.type == "login":
         # Built-in composite step: deterministic wp-admin login from config.
         # Credentials never pass through the AI healing path.
-        page.goto(resolve("{{store_url}}/wp-login.php", cfg), timeout=timeout_ms)
+        page.goto(resolve("{{starting_url}}/wp-login.php", cfg), timeout=timeout_ms)
         page.fill("#user_login", str(cfg["admin_user"]), timeout=timeout_ms)
         page.fill("#user_pass", str(cfg["admin_password"]), timeout=timeout_ms)
         page.click("#wp-submit", timeout=timeout_ms)

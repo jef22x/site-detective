@@ -15,7 +15,7 @@ def _healing_test(url_page: str) -> TestDefinition:
         id="healing-check",
         defaults=Defaults(timeout_ms=1500, retries=0, healing=True),
         steps=[
-            Step(type="navigate", url="{{store_url}}/" + url_page),
+            Step(type="navigate", url="{{starting_url}}/" + url_page),
             Step(type="click", intent="The Add to Cart button on the product page",
                  selector="button.single_add_to_cart_button"),
             Step(type="assert_element", intent="The cart page heading",
@@ -28,7 +28,7 @@ def test_renamed_class_is_healed(mock_shop_server, tmp_path, monkeypatch):
     """(a) renamed class -> healed, written back, audited."""
     monkeypatch.setattr(healing, "propose_selector",
                         lambda intent, dom, shot, cfg: "button.add_to_basket_btn")
-    cfg = {"store_url": mock_shop_server, "ollama": {"enabled": True, "model": "mock"}}
+    cfg = {"starting_url": mock_shop_server, "ollama": {"enabled": True, "model": "mock"}}
     test_def = _healing_test("product_v2.html")
     session_factory = init_db(tmp_path / "autoqa.db")
 
@@ -54,7 +54,7 @@ def test_removed_element_fails_bounded(mock_shop_server, tmp_path, monkeypatch):
         return "button.still_not_there"
 
     monkeypatch.setattr(healing, "propose_selector", bad_proposal)
-    cfg = {"store_url": mock_shop_server, "ollama": {"enabled": True}}
+    cfg = {"starting_url": mock_shop_server, "ollama": {"enabled": True}}
     test_def = _healing_test("cart.html")  # no add-to-cart button on the cart page
     session_factory = init_db(tmp_path / "autoqa.db")
 
@@ -67,7 +67,7 @@ def test_removed_element_fails_bounded(mock_shop_server, tmp_path, monkeypatch):
 
 def test_ollama_offline_degrades_gracefully(mock_shop_server, tmp_path):
     """(c) Ollama enabled but unreachable -> step fails normally, no crash."""
-    cfg = {"store_url": mock_shop_server,
+    cfg = {"starting_url": mock_shop_server,
            "ollama": {"enabled": True, "url": "http://127.0.0.1:9", "timeout_s": 1}}
     test_def = _healing_test("product_v2.html")
     session_factory = init_db(tmp_path / "autoqa.db")

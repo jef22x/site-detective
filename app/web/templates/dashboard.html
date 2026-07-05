@@ -2,7 +2,10 @@
 {% block content %}
 <div class="grid md:grid-cols-2 gap-6">
   <section class="bg-white rounded-lg border border-slate-200 p-5">
-    <h2 class="font-semibold text-lg mb-3">Tests</h2>
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-semibold text-lg">Tests</h2>
+      <a href="/tests/new" class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-1.5 rounded">+ New Test</a>
+    </div>
     {% for t in tests %}
     <div class="flex items-center justify-between py-2 border-b border-slate-100">
       {% if t.valid %}
@@ -18,38 +21,65 @@
       </form>
     </div>
     {% else %}
-    <p class="text-slate-500">No test definitions in <code>tests/</code>.</p>
+    <div class="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded p-4">
+      <p class="font-medium text-slate-800 mb-2">Welcome! Get started in three steps:</p>
+      <ol class="list-decimal list-inside space-y-1 mb-3">
+        <li>Set your <a href="/config" class="text-blue-700 hover:underline">starting URL</a> — the site your tests will check.</li>
+        <li><a href="/tests/new" class="text-blue-700 hover:underline">Create a test</a> — a series of steps like “click”, “type”, and “check element”.</li>
+        <li>Press <span class="font-medium">Run</span> and watch the results appear below.</li>
+      </ol>
+      <button onclick="createExample()"
+        class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-1.5 rounded">
+        Create an example test for me</button>
+    </div>
     {% endfor %}
   </section>
 
   <section class="bg-white rounded-lg border border-slate-200 p-5">
     <h2 class="font-semibold text-lg mb-3">Environment</h2>
     <div id="env" class="text-sm text-slate-600">Checking…</div>
+    <p class="text-xs text-slate-500 mt-2">The default starting URL is the site your tests run against — every run opens it
+      first. Change it in <a href="/config" class="text-blue-700 hover:underline">Config</a>, or override it per test.</p>
     <script>
       fetch('/api/env').then(r => r.json()).then(e => {
         const b = (ok) => ok ? '✅' : '❌';
         document.getElementById('env').innerHTML =
-          `${b(e.store.ok)} Store: <code>${e.store.url || '—'}</code><br>` +
-          `${b(e.mailpit.ok)} Mailpit: <code>${e.mailpit.url || '—'}</code><br>` +
+          `${b(e.starting_url.ok)} Default starting URL: <code>${e.starting_url.url || '—'}</code><br>` +
+          (e.smtp.configured
+            ? `${b(e.smtp.ok)} SMTP: <code>${e.smtp.host}</code>${e.smtp.error ? ' — ' + e.smtp.error : ''}<br>`
+            : `⚪ Email notifications not configured<br>`) +
           (e.ollama.enabled
             ? `${b(e.ollama.ok)} Ollama ${e.ollama.model_present ? '(model ready)' : '(model missing)'}`
             : `⚪ Ollama healing disabled`);
       });
+      async function createExample() {
+        try {
+          const r = await fetch('/api/tests/example', {method: 'POST'});
+          if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+          location.href = `/tests/${(await r.json()).id}/edit`;
+        } catch (e) { alert(e.message); }
+      }
     </script>
   </section>
 </div>
 
 <section class="bg-white rounded-lg border border-slate-200 p-5 mt-6">
-  <h2 class="font-semibold text-lg mb-3">Run history</h2>
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="font-semibold text-lg">Run history</h2>
+    <a href="/runs" class="text-blue-700 hover:underline text-sm">View all runs &rarr;</a>
+  </div>
+  <div class="overflow-x-auto">
   <table class="w-full text-sm">
     <thead><tr class="text-left text-slate-500 border-b">
       <th class="py-2">Test</th><th>Status</th><th>Started</th><th>Duration</th><th>Run ID</th></tr></thead>
     <tbody>
       {% for r in runs %}
       <tr class="border-b border-slate-100 hover:bg-slate-50">
-        <td class="py-2">{{ r.test_id }}</td>
+        <td class="py-2">{{ r.test_id }}
+          {% if r.trigger == 'scheduled' %}<span title="Started by a schedule">🕐</span>{% endif %}</td>
         <td><span class="px-2 py-0.5 rounded-full text-white text-xs
           {% if r.status == 'passed' %}bg-green-600{% elif r.status == 'running' %}bg-blue-600
+          {% elif r.status == 'skipped' %}bg-slate-500
           {% else %}bg-red-600{% endif %}">{{ r.status }}</span></td>
         <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
         <td class="text-slate-500">{{ r.duration or '—' }}</td>
@@ -61,5 +91,6 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 {% endblock %}

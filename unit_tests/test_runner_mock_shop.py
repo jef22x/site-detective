@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_mock_shop_purchase_flow(mock_shop_server, tmp_path):
-    cfg = {"store_url": mock_shop_server, "ollama": {"enabled": False}}
+    cfg = {"starting_url": mock_shop_server, "ollama": {"enabled": False}}
     test_def = load_test(ROOT / "tests" / "mock-shop-purchase.yaml")
     session_factory = init_db(tmp_path / "autoqa.db")
 
@@ -32,7 +32,7 @@ def test_mock_shop_purchase_flow(mock_shop_server, tmp_path):
 
 
 def test_failure_marks_run_failed_and_skips_rest(mock_shop_server, tmp_path):
-    cfg = {"store_url": mock_shop_server, "ollama": {"enabled": False}}
+    cfg = {"starting_url": mock_shop_server, "ollama": {"enabled": False}}
     test_def = load_test(ROOT / "tests" / "mock-shop-purchase.yaml")
     # Break the Add to Cart selector; healing is disabled in this test file.
     test_def.test.steps[2].selector = "button.does_not_exist"

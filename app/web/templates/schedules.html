@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-xl font-bold">Schedules</h1>
+  <button onclick="document.getElementById('add-form').classList.toggle('hidden')"
+    class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-1.5 rounded">+ Add Schedule</button>
+</div>
+
+<section id="add-form" class="hidden bg-white rounded-lg border border-slate-200 p-5 mb-6">
+  <h2 class="font-semibold mb-3">New schedule</h2>
+  <div class="grid sm:grid-cols-2 gap-4 text-sm">
+    <label class="block">Test
+      <select id="f-test" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5">
+        {% for t in tests %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="block">Cadence
+      <select id="f-kind" onchange="kindChanged()" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5">
+        <option value="interval">Every N minutes</option>
+        <option value="daily">Daily at time</option>
+        <option value="cron">Cron expression</option>
+      </select>
+    </label>
+    <label class="block" id="p-interval">Every (minutes, 5–10080)
+      <input id="f-minutes" type="number" min="5" max="10080" value="30"
+        oninput="previewFirings()" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5">
+    </label>
+    <label class="block hidden" id="p-daily">At (HH:MM, server local time)
+      <input id="f-time" type="time" value="06:00"
+        oninput="previewFirings()" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5">
+    </label>
+    <label class="block hidden" id="p-cron">Cron (5 fields, e.g. <code>0 6 * * 1-5</code>)
+      <input id="f-cron" type="text" placeholder="0 6 * * 1-5"
+        oninput="previewFirings()" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 font-mono">
+    </label>
+  </div>
+  <p id="preview" class="text-sm text-slate-500 mt-3"></p>
+  <p id="form-error" class="text-sm text-red-600 mt-1"></p>
+  <button onclick="createSchedule()"
+    class="mt-3 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded font-medium">Save schedule</button>
+</section>
+
+<section class="bg-white rounded-lg border border-slate-200 p-5">
+  <div class="overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead><tr class="text-left text-slate-500 border-b">
+      <th class="py-2">Test</th><th>Cadence</th><th>Next run (UTC)</th>
+      <th>Last result</th><th>Enabled</th><th></th></tr></thead>
+    <tbody>
+      {% for s in schedules %}
+      <tr class="border-b border-slate-100 hover:bg-slate-50 {% if not s.enabled %}opacity-60{% endif %}">
+        <td class="py-2"><a class="text-blue-700 hover:underline" href="/tests/{{ s.test_id }}">{{ s.test_id }}</a></td>
+        <td {% if s.kind == 'cron' %}class="font-mono text-xs" title="server local time"{% endif %}>{{ s.cadence }}</td>
+        <td class="text-slate-500">{{ s.next_run_at or '—' }}</td>
+        <td>
+          {% if s.last_result %}
+          <span class="px-2 py-0.5 rounded-full text-xs
+            {% if s.last_result == 'passed' %}bg-green-600 text-white
+            {% elif s.last_result == 'skipped_busy' %}bg-slate-400 text-white
+            {% else %}bg-red-600 text-white{% endif %}">{{ s.last_result }}</span>
+          {% else %}<span class="text-slate-400">—</span>{% endif %}
+        </td>
+        <td>
+          <button onclick="toggleSchedule('{{ s.id }}')"
+            class="text-xs px-2 py-0.5 rounded border {% if s.enabled %}bg-emerald-50 border-emerald-400 text-emerald-700{% else %}bg-slate-100 border-slate-300 text-slate-500{% endif %}">
+            {{ 'on' if s.enabled else 'off' }}</button>
+        </td>
+        <td><button onclick="deleteSchedule('{{ s.id }}')"
+            class="text-red-600 hover:underline text-xs">Delete</button></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="py-4 text-slate-500">No schedules yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<div id="toast" class="hidden fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded shadow-lg"></div>
+<script>
+function toast(msg, isError) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'fixed bottom-6 right-6 text-white px-4 py-2 rounded shadow-lg ' +
+                 (isError ? 'bg-red-600' : 'bg-slate-900');
+  setTimeout(() => el.classList.add('hidden'), 4000);
+}
+function kindChanged() {
+  const kind = document.getElementById('f-kind').value;
+  for (const k of ['interval', 'daily', 'cron'])
+    document.getElementById('p-' + k).classList.toggle('hidden', k !== kind);
+  previewFirings();
+}
+function cadenceBody() {
+  const kind = document.getElementById('f-kind').value;
+  const body = {kind};
+  if (kind === 'interval') body.every_minutes = document.getElementById('f-minutes').value;
+  if (kind === 'daily') body.at_time = document.getElementById('f-time').value;
+  if (kind === 'cron') body.cron_expr = document.getElementById('f-cron').value;
+  return body;
+}
+async function previewFirings() {
+  const el = document.getElementById('preview');
+  try {
+    const r = await fetch('/api/schedules/preview', {method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify(cadenceBody())});
+    if (!r.ok) throw new Error((await r.json()).detail);
+    const data = await r.json();
+    el.textContent = 'Next firings: ' + data.firings.join(', ');
+  } catch (e) { el.textContent = ''; }
+}
+async function createSchedule() {
+  const err = document.getElementById('form-error');
+  err.textContent = '';
+  const body = {...cadenceBody(), test_id: document.getElementById('f-test').value};
+  try {
+    const r = await fetch('/api/schedules', {method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    if (!r.ok) {
+      const d = (await r.json()).detail;
+      throw new Error(typeof d === 'string' ? d : JSON.stringify(d));
+    }
+    location.reload();
+  } catch (e) { err.textContent = e.message; }
+}
+async function toggleSchedule(id) {
+  const r = await fetch(`/api/schedules/${id}/toggle`, {method: 'POST'});
+  if (r.ok) location.reload(); else toast('Toggle failed', true);
+}
+async function deleteSchedule(id) {
+  if (!confirm('Delete this schedule? Past runs are kept.')) return;
+  const r = await fetch(`/api/schedules/${id}`, {method: 'DELETE'});
+  if (r.ok) location.reload(); else toast('Delete failed', true);
+}
+previewFirings();
+</script>
+{% endblock %}

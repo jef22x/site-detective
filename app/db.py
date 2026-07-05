@@ -24,9 +24,43 @@ class Run(Base):
     test_id: Mapped[str]
     started_at: Mapped[datetime] = mapped_column(default=_now)
     finished_at: Mapped[datetime | None] = mapped_column(default=None)
-    status: Mapped[str] = mapped_column(default="running")  # running|passed|failed|error
+    status: Mapped[str] = mapped_column(default="running")  # running|passed|failed|error|skipped
     config_snapshot: Mapped[str] = mapped_column(default="{}")  # secrets masked
     error: Mapped[str | None] = mapped_column(default=None)  # crash traceback when status == "error"
+    trigger: Mapped[str] = mapped_column(default="manual")  # manual|scheduled
+    schedule_id: Mapped[str | None] = mapped_column(default=None)
+    skip_reason: Mapped[str | None] = mapped_column(default=None)  # set when status == "skipped"
+
+
+class Schedule(Base):
+    __tablename__ = "schedules"
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=lambda: uuid.uuid4().hex)
+    test_id: Mapped[str]
+    kind: Mapped[str]  # interval|daily|cron
+    every_minutes: Mapped[int | None] = mapped_column(default=None)
+    at_time: Mapped[str | None] = mapped_column(default=None)  # "HH:MM" local
+    cron_expr: Mapped[str | None] = mapped_column(default=None)  # 5-field, local time
+    enabled: Mapped[bool] = mapped_column(default=True)
+    next_run_at: Mapped[datetime | None] = mapped_column(default=None)  # UTC
+    last_run_at: Mapped[datetime | None] = mapped_column(default=None)
+    # passed|failed|error|skipped_busy|error_missing_test
+    last_result: Mapped[str | None] = mapped_column(default=None)
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=lambda: uuid.uuid4().hex)
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+    kind: Mapped[str]  # run_failed|run_error|run_skipped|schedule_disabled
+    severity: Mapped[str]  # warning|error
+    title: Mapped[str]
+    body: Mapped[str] = mapped_column(default="")
+    run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id"), default=None)
+    schedule_id: Mapped[str | None] = mapped_column(default=None)
+    read_at: Mapped[datetime | None] = mapped_column(default=None)
 
 
 class StepResult(Base):
@@ -63,7 +97,15 @@ def init_db(db_path: str | Path) -> sessionmaker[Session]:
     Base.metadata.create_all(engine)
     # Lightweight migration: create_all never alters existing tables, so add
     # columns introduced after a database was first created.
-    if "error" not in {c["name"] for c in inspect(engine).get_columns("runs")}:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE runs ADD COLUMN error TEXT"))
+    run_cols = {c["name"] for c in inspect(engine).get_columns("runs")}
+    migrations = {
+        "error": "ALTER TABLE runs ADD COLUMN error TEXT",
+        "trigger": "ALTER TABLE runs ADD COLUMN 'trigger' TEXT DEFAULT 'manual'",
+        "schedule_id": "ALTER TABLE runs ADD COLUMN schedule_id TEXT",
+        "skip_reason": "ALTER TABLE runs ADD COLUMN skip_reason TEXT",
+    }
+    for col, ddl in migrations.items():
+        if col not in run_cols:
+            with engine.begin() as conn:
+                conn.execute(text(ddl))
     return sessionmaker(engine, expire_on_commit=False)

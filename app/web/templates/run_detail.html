@@ -2,13 +2,27 @@
 {% block content %}
 <h1 class="text-xl font-bold mb-1">{{ run.test_id }}
   <span class="px-2 py-0.5 rounded-full text-white text-sm
-    {% if run.status == 'passed' %}bg-green-600{% else %}bg-red-600{% endif %}">{{ run.status }}</span>
+    {% if run.status == 'passed' %}bg-green-600{% elif run.status == 'skipped' %}bg-slate-500
+    {% else %}bg-red-600{% endif %}">{{ run.status }}</span>
+  {% if run.trigger == 'scheduled' %}
+  <span class="px-2 py-0.5 rounded-full text-sm bg-indigo-100 text-indigo-800 border border-indigo-200"
+    title="Started by a schedule">🕐 scheduled</span>
+  {% endif %}
 </h1>
 <p class="text-slate-500 text-sm mb-4">Run <code>{{ run.id }}</code> · {{ run.started_at }}
   {% if run.duration %} · took {{ run.duration }}{% endif %}
   {% if has_report %} · <a class="text-blue-700 hover:underline"
      href="/artifacts/{{ run.id }}/report.html" target="_blank">Open HTML report</a>{% endif %}
+  {% if run.schedule_id %} · <a class="text-blue-700 hover:underline" href="/schedules">Schedule</a>{% endif %}
 </p>
+
+{% if run.skip_reason %}
+<section class="bg-slate-100 border border-slate-300 rounded-lg p-4 mb-6">
+  <h2 class="font-semibold mb-2">Why this run was skipped</h2>
+  <p class="text-sm">{{ run.skip_reason }}</p>
+  <p class="text-sm text-slate-500 mt-1">Skipped firings are never retried; the schedule catches its next slot.</p>
+</section>
+{% endif %}
 
 {% if run.error %}
 <section class="bg-red-50 border border-red-300 rounded-lg p-4 mb-6">

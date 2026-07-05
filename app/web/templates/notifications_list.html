@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-xl font-bold">Notifications</h1>
+  <div class="flex items-center gap-4 text-sm">
+    <label class="flex items-center gap-2 cursor-pointer" title="Send notifications by email (SMTP settings in .env)">
+      <input id="email-toggle" type="checkbox" {% if email_on %}checked{% endif %}
+        onchange="setEmailToggle(this.checked)" class="h-4 w-4">
+      Email notifications
+    </label>
+    {% if email_on and not email_ready %}
+    <span class="text-amber-700 bg-amber-50 border border-amber-300 rounded px-2 py-0.5 text-xs"
+      title="Set SMTP_HOST in .env and notify_email_to in settings.yaml">SMTP not configured — emails are skipped</span>
+    {% endif %}
+    <a href="/notifications{% if not unread_only %}?unread=1{% endif %}"
+      class="text-blue-700 hover:underline">{{ 'Show all' if unread_only else 'Unread only' }}</a>
+    <button onclick="readAll()" class="text-blue-700 hover:underline">Mark all read</button>
+  </div>
+</div>
+
+<section class="bg-white rounded-lg border border-slate-200 divide-y divide-slate-100">
+  {% for n in items %}
+  <a href="/notifications/{{ n.id }}"
+     class="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 {% if not n.read_at %}bg-blue-50/60{% endif %}">
+    <span class="mt-0.5">{{ '🔴' if n.severity == 'error' else '⚠️' }}</span>
+    <span class="flex-1">
+      <span class="block {% if not n.read_at %}font-semibold{% endif %}">{{ n.title }}</span>
+      <span class="block text-xs text-slate-500 mt-0.5">
+        {{ n.kind }} · {{ n.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC
+        {% if n.run_id %} · run {{ n.run_id[:12] }}…{% endif %}
+      </span>
+    </span>
+    {% if not n.read_at %}<span class="text-xs bg-blue-600 text-white rounded-full px-2 py-0.5">new</span>{% endif %}
+  </a>
+  {% else %}
+  <p class="px-4 py-6 text-slate-500">No notifications{{ ' (unread)' if unread_only }}.</p>
+  {% endfor %}
+</section>
+
+{% if total > offset + items | length %}
+<a class="inline-block mt-3 text-blue-700 hover:underline text-sm"
+   href="/notifications?offset={{ offset + 50 }}{% if unread_only %}&unread=1{% endif %}">
+  Older ({{ total - offset - items | length }} more)</a>
+{% endif %}
+
+<script>
+async function setEmailToggle(enabled) {
+  const r = await fetch('/api/settings/email-notifications', {method: 'POST',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({enabled})});
+  if (r.ok) location.reload();
+}
+async function readAll() {
+  const r = await fetch('/api/notifications/read-all', {method: 'POST'});
+  if (r.ok) location.reload();
+}
+</script>
+{% endblock %}

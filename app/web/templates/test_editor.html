@@ -24,6 +24,12 @@
       <label class="block text-sm font-medium mb-1">Description</label>
       <textarea id="f-description" rows="2" class="w-full border border-slate-300 rounded px-3 py-2"></textarea>
     </div>
+    <div class="md:col-span-2">
+      <label class="block text-sm font-medium mb-1">Starting URL</label>
+      <input id="f-starting-url" type="text" class="w-full border border-slate-300 rounded px-3 py-2"
+             placeholder="Leave empty to use the global default from Settings">
+      <p class="text-xs text-slate-500 mt-1">Every run opens this page first, so a leading “Go to URL” step isn't needed.</p>
+    </div>
   </div>
   <details class="mt-3">
     <summary class="text-sm text-slate-600 cursor-pointer select-none">Advanced defaults</summary>
@@ -105,6 +111,7 @@ if (INITIAL) {
   document.getElementById('f-id').readOnly = true;
   document.getElementById('f-id').classList.add('bg-slate-100');
   document.getElementById('f-description').value = t.description || '';
+  document.getElementById('f-starting-url').value = t.starting_url || '';
   const d = t.defaults || {};
   if (d.timeout_ms != null) document.getElementById('f-timeout').value = d.timeout_ms;
   if (d.retries != null) document.getElementById('f-retries').value = d.retries;
@@ -121,7 +128,7 @@ document.getElementById('f-name').addEventListener('input', e => {
   if (!idTouched) document.getElementById('f-id').value = slugify(e.target.value);
 });
 document.getElementById('f-id').addEventListener('input', () => { idTouched = true; markDirty(); });
-['f-description', 'f-timeout', 'f-retries', 'f-healing'].forEach(id =>
+['f-description', 'f-starting-url', 'f-timeout', 'f-retries', 'f-healing'].forEach(id =>
   document.getElementById(id).addEventListener('input', markDirty));
 
 function slugify(s) {
@@ -169,7 +176,7 @@ function fieldHtml(i, s, f) {
   const req = (REQUIRED[s.type] || []).includes(f) ||
               (f === 'intent' && !!s.selector);
   const varHint = VAR_FIELDS.has(f)
-    ? ' <span class="text-xs bg-slate-100 border border-slate-200 rounded px-1" title="Supports config placeholders like {{ '{{' }}store_url{{ '}}' }}">{ } vars ok</span>' : '';
+    ? ' <span class="text-xs bg-slate-100 border border-slate-200 rounded px-1" title="Supports config placeholders like {{ '{{' }}starting_url{{ '}}' }}">{ } vars ok</span>' : '';
   const ph = f === 'intent' ? 'e.g. The Add to Cart button on the product page' : '';
   return `<div class="mt-2"><label class="block text-xs font-medium text-slate-600 mb-1">
       ${FIELD_LABELS[f]}${req ? ' <span class="text-red-500">*</span>' : ''}${varHint}</label>
@@ -327,6 +334,7 @@ function buildPayload() {
       id: document.getElementById('f-id').value.trim(),
       name: document.getElementById('f-name').value.trim(),
       description: document.getElementById('f-description').value.trim(),
+      starting_url: document.getElementById('f-starting-url').value.trim() || null,
       defaults: {
         timeout_ms: +document.getElementById('f-timeout').value || 10000,
         retries: Math.max(0, +document.getElementById('f-retries').value || 0),

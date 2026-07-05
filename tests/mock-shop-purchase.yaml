@@ -7,7 +7,7 @@ test:
     healing: false
   steps:
   - type: navigate
-    url: '{{store_url}}/product.html'
+    url: '{{starting_url}}/product.html'
   - type: select
     intent: The size dropdown on the product page
     selector: select#size

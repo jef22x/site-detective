@@ -1,10 +1,9 @@
 # SiteDetective configuration (spec F-2). Secrets are masked in UI/logs.
-store_url: "http://127.0.0.1:8899"   # mock shop for demo; point at your staging site
+starting_url: "http://127.0.0.1:8899"   # mock shop for demo; point at your staging site
 admin_user: "admin"
 admin_password: "changeme"
 product_id: "123"
 purchases_per_run: 1
-mailpit_url: "http://localhost:8025"
 stripe_publishable_key: ""
 stripe_secret_key: ""
 
@@ -12,3 +11,7 @@ ollama:
   enabled: true
   url: "http://localhost:11434"
   model: "qwen2.5vl:7b"
+
+email_notifications: false
+# Notifications: recipient for email delivery (SMTP creds live in .env)
+# notify_email_to: "you@example.com"

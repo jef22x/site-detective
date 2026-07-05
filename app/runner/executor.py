@@ -13,7 +13,7 @@ from typing import Any, Dict, List
 from playwright.sync_api import TimeoutError as PlaywrightTimeout, sync_playwright
 from sqlalchemy.orm import Session, sessionmaker
 
-from ..config import mask_secrets, SECRET_KEYS
+from ..config import mask_secrets, resolve, SECRET_KEYS
 from ..db import HealingEvent, Run, StepResult
 from ..logging_utils import log_error
 from ..schemas import Step, TestDefinition
@@ -44,12 +44,18 @@ class RunOutcome:
 
 def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
              session_factory: sessionmaker[Session], reports_root: str | Path,
-             headless: bool = True, on_step=None, logs_root: str | Path = "logs") -> RunOutcome:
+             headless: bool = True, on_step=None, logs_root: str | Path = "logs",
+             trigger: str = "manual", schedule_id: str | None = None) -> RunOutcome:
     test = test_def.test
+    # Per-test starting URL, falling back to the global one. Every fresh
+    # browser context opens here, so tests don't need a leading navigate step.
+    start_url = resolve(test.starting_url, cfg) if test.starting_url else (
+        str(cfg["starting_url"]) if cfg.get("starting_url") else None)
     snapshot = {k: ("***" if k in SECRET_KEYS else v) for k, v in cfg.items()}
 
     with session_factory() as db:
-        run = Run(test_id=test.id, config_snapshot=json.dumps(snapshot, default=str))
+        run = Run(test_id=test.id, config_snapshot=json.dumps(snapshot, default=str),
+                  trigger=trigger, schedule_id=schedule_id)
         db.add(run)
         db.commit()
         run_id = run.id
@@ -70,7 +76,10 @@ def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
             def page_for(ctx_name: str):
                 if ctx_name not in contexts:
                     ctx = browser.new_context(viewport={"width": 1920, "height": 1080})
-                    contexts[ctx_name] = ctx.new_page()
+                    page = ctx.new_page()
+                    if start_url:
+                        page.goto(start_url, timeout=test.defaults.timeout_ms)
+                    contexts[ctx_name] = page
                 return contexts[ctx_name]
 
             try:
