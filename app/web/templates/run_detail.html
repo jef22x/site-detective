@@ -28,7 +28,18 @@
 </section>
 {% endif %}
 
-{% if run.error %}
+{% if run.error_summary %}
+<section class="bg-red-50 border border-red-300 rounded-lg p-4 mb-6">
+  <h2 class="font-semibold text-red-700 mb-2">Run error</h2>
+  <p class="text-red-700 text-sm whitespace-pre-wrap">{{ run.error_summary }}</p>
+  {% if run.error %}
+  <details class="mt-2">
+    <summary class="text-xs text-slate-500 cursor-pointer">Technical details</summary>
+    <pre class="text-red-600 text-xs whitespace-pre-wrap mt-1">{{ run.error }}</pre>
+  </details>
+  {% endif %}
+</section>
+{% elif run.error %}
 <section class="bg-red-50 border border-red-300 rounded-lg p-4 mb-6">
   <h2 class="font-semibold text-red-700 mb-2">Run error</h2>
   <pre class="text-red-600 text-xs whitespace-pre-wrap">{{ run.error }}</pre>
@@ -54,7 +65,13 @@
       {% elif s.status == 'skipped' %}bg-slate-500{% else %}bg-red-600{% endif %}">{{ s.status }}</span>
     <span class="text-slate-400 text-sm">{{ s.duration_ms }} ms</span>
   </div>
-  {% if s.error %}<pre class="text-red-600 text-xs mt-2 whitespace-pre-wrap">{{ s.error }}</pre>{% endif %}
+  {% if s.error %}<p class="text-red-700 text-sm mt-2 whitespace-pre-wrap">{{ s.error }}</p>{% endif %}
+  {% if s.error_detail %}
+  <details class="mt-1">
+    <summary class="text-xs text-slate-500 cursor-pointer">Technical details</summary>
+    <pre class="text-red-600 text-xs whitespace-pre-wrap mt-1">{{ s.error_detail }}</pre>
+  </details>
+  {% endif %}
   {% if s.shot_url %}
   <details class="mt-2"><summary class="cursor-pointer text-sm text-blue-700">Screenshot</summary>
     <img src="{{ s.shot_url }}" class="mt-2 border border-slate-200 rounded max-w-3xl" loading="lazy">

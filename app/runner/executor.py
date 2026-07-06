@@ -18,6 +18,7 @@ from ..db import HealingEvent, Run, StepResult
 from ..logging_utils import log_error
 from ..schemas import Step, TestDefinition
 from . import healing
+from .errors import classify
 from .steps import AssertionFailure, execute_step
 
 MAX_HEAL_ATTEMPTS = 2
@@ -30,7 +31,8 @@ class StepOutcome:
     status: str  # passed | failed | healed_then_passed | skipped
     duration_ms: int = 0
     screenshot: str | None = None
-    error: str | None = None
+    error: str | None = None  # friendly message (spec: docs/spec-friendly-run-errors.md)
+    error_detail: str | None = None  # raw error text for debugging
 
 
 @dataclass
@@ -39,7 +41,8 @@ class RunOutcome:
     status: str  # passed | failed | error
     steps: List[StepOutcome] = field(default_factory=list)
     reports_dir: str = ""
-    error: str | None = None  # set when status == "error" (unexpected crash)
+    error: str | None = None  # crash traceback when status == "error"
+    error_summary: str | None = None  # friendly message for the UI/notifications
 
 
 def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
@@ -130,7 +133,9 @@ def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
             finally:
                 browser.close()
     except Exception as e:
-        crash_error = "".join(traceback.format_exception(type(e), e, e.__traceback__)).strip()
+        friendly = classify(e, url=start_url, timeout_ms=test.defaults.timeout_ms)
+        crash_error = friendly.detail
+        outcome.error_summary = mask_secrets(friendly.summary(), cfg)
         log_error(f"run={run_id} errored: {mask_secrets(crash_error, cfg)}", logs_root)
 
     if crash_error is not None:
@@ -143,13 +148,15 @@ def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
         run = db.get(Run, run_id)
         run.status = outcome.status
         run.error = outcome.error
+        run.error_summary = outcome.error_summary
         from ..db import _now
         run.finished_at = _now()
         for s in outcome.steps:
             db.add(StepResult(run_id=run_id, step_index=s.index, step_type=s.step_type,
                               selector=None, status=s.status, duration_ms=s.duration_ms,
                               screenshot_path=s.screenshot,
-                              error=mask_secrets(s.error, cfg)))
+                              error=mask_secrets(s.error, cfg),
+                              error_detail=mask_secrets(s.error_detail, cfg)))
         db.commit()
     return outcome
 
@@ -248,5 +255,9 @@ def _run_one_step(page, step: Step, index: int, cfg, timeout: int, retries: int,
                 step.selector = candidate  # caller persists write-back (F-5)
                 return StepOutcome(index, step.type, "healed_then_passed")
 
-    err = "".join(traceback.format_exception_only(last_err)).strip() if last_err else "unknown"
-    return StepOutcome(index, step.type, "failed", error=err)
+    if last_err is None:
+        return StepOutcome(index, step.type, "failed", error="unknown")
+    friendly = classify(last_err, step=step, timeout_ms=timeout)
+    detail = "".join(traceback.format_exception_only(last_err)).strip()
+    return StepOutcome(index, step.type, "failed",
+                       error=friendly.summary(), error_detail=detail)

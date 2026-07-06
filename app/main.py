@@ -207,7 +207,8 @@ def _after_scheduled_run(cfg, test_id: str, schedule_id: str, outcome):
             row.last_result = status
             db.commit()
     if status in ("failed", "error"):
-        detail = (outcome.error if outcome and outcome.error else
+        detail = (outcome.error_summary if outcome and outcome.error_summary else
+                  outcome.error.splitlines()[0] if outcome and outcome.error else
                   "; ".join(f"step #{s.index} {s.step_type}: {s.error}"
                             for s in (outcome.steps if outcome else [])
                             if s.status == "failed") or "see run detail")

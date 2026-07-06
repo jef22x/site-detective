@@ -27,6 +27,7 @@ class Run(Base):
     status: Mapped[str] = mapped_column(default="running")  # running|passed|failed|error|skipped
     config_snapshot: Mapped[str] = mapped_column(default="{}")  # secrets masked
     error: Mapped[str | None] = mapped_column(default=None)  # crash traceback when status == "error"
+    error_summary: Mapped[str | None] = mapped_column(default=None)  # friendly message for the UI
     trigger: Mapped[str] = mapped_column(default="manual")  # manual|scheduled
     schedule_id: Mapped[str | None] = mapped_column(default=None)
     skip_reason: Mapped[str | None] = mapped_column(default=None)  # set when status == "skipped"
@@ -74,7 +75,8 @@ class StepResult(Base):
     status: Mapped[str]  # passed|failed|healed_then_passed|skipped
     duration_ms: Mapped[int] = mapped_column(default=0)
     screenshot_path: Mapped[str | None] = mapped_column(default=None)
-    error: Mapped[str | None] = mapped_column(default=None)
+    error: Mapped[str | None] = mapped_column(default=None)  # friendly message
+    error_detail: Mapped[str | None] = mapped_column(default=None)  # raw error text
 
 
 class HealingEvent(Base):
@@ -114,9 +116,14 @@ def init_db(db_path: str | Path) -> sessionmaker[Session]:
         "trigger": "ALTER TABLE runs ADD COLUMN 'trigger' TEXT DEFAULT 'manual'",
         "schedule_id": "ALTER TABLE runs ADD COLUMN schedule_id TEXT",
         "skip_reason": "ALTER TABLE runs ADD COLUMN skip_reason TEXT",
+        "error_summary": "ALTER TABLE runs ADD COLUMN error_summary TEXT",
     }
     for col, ddl in migrations.items():
         if col not in run_cols:
             with engine.begin() as conn:
                 conn.execute(text(ddl))
+    step_cols = {c["name"] for c in inspect(engine).get_columns("steps")}
+    if "error_detail" not in step_cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE steps ADD COLUMN error_detail TEXT"))
     return sessionmaker(engine, expire_on_commit=False)
