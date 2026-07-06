@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import ForeignKey, create_engine, inspect, text
+from sqlalchemy import ForeignKey, create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 
@@ -93,7 +93,18 @@ class HealingEvent(Base):
 
 def init_db(db_path: str | Path) -> sessionmaker[Session]:
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    engine = create_engine(f"sqlite:///{db_path}")
+    # Concurrent runs mean several writer threads (runners, scheduler, web).
+    # WAL lets readers proceed during writes; the busy timeout absorbs
+    # writer collisions instead of raising "database is locked".
+    engine = create_engine(f"sqlite:///{db_path}", connect_args={"timeout": 15})
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_conn, _record):
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA synchronous=NORMAL")
+        cur.close()
+
     Base.metadata.create_all(engine)
     # Lightweight migration: create_all never alters existing tables, so add
     # columns introduced after a database was first created.

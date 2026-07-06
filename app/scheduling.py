@@ -1,8 +1,9 @@
 """Background test scheduler (spec: docs/spec-test-scheduling.md).
 
 A single daemon thread polls the schedules table every POLL_SECONDS. Due
-schedules fire through the same run path as manual runs. If a run is
-already active the firing is skipped (never queued or retried): a
+schedules fire through the same run path as manual runs. If the firing
+cannot start (all run slots busy, or the same test already running) it
+is skipped (never queued or retried): a
 skipped Run row plus a minimal artifact record what happened. On startup
 overdue schedules are advanced without firing — a restart must cause
 zero side effects.
@@ -184,9 +185,10 @@ class Scheduler:
             f"<p><b>Test:</b> {test_id}<br><b>Run ID:</b> {run_id}<br>"
             f"<b>Scheduled time:</b> {when:%Y-%m-%d %H:%M:%S} UTC</p>"
             f"<p><b>Reason:</b> {reason}</p>"
-            "<p>This scheduled firing was skipped because only one run may "
-            "execute at a time. It will not be retried; the schedule catches "
-            "its next slot.</p></body></html>",
+            "<p>This scheduled firing was skipped because the run could not "
+            "start at that moment (all run slots were busy, or the same test "
+            "was already running). It will not be retried; the schedule "
+            "catches its next slot.</p></body></html>",
             encoding="utf-8")
 
 

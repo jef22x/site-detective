@@ -32,14 +32,16 @@
           bell.classList.add('hidden');
         }
         const el = document.getElementById('live');
-        if (s.active) {
-          el.textContent = `Running ${s.test_id}: ${s.done}/${s.total} — ${s.last_step}`;
+        if (s.active > 0) {
+          const running = s.runs.filter(r => r.status === 'running');
+          el.textContent = `Running ${s.active}/${s.slots} slots — ` +
+            running.map(r => `${r.test_id} ${r.done}/${r.total}`).join(' · ');
           setTimeout(poll, 1000);
           window._wasActive = true;
         } else if (window._wasActive) {
           location.reload();
-        } else if (s.status) {
-          el.textContent = `Last run: ${s.status}`;
+        } else if (s.runs && s.runs.length) {
+          el.textContent = `Last run: ${s.runs[s.runs.length - 1].status}`;
         }
       } catch (e) {}
     }

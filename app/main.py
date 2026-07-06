@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 from pathlib import Path
 
 import yaml
@@ -34,9 +35,59 @@ session_factory = init_db(DB_PATH)
 REPORTS_DIR.mkdir(exist_ok=True)
 app.mount("/artifacts", StaticFiles(directory=str(REPORTS_DIR)), name="artifacts")
 
-# In-memory live progress for the currently executing run (one at a time in v1).
-LIVE: dict = {"active": False}
-_run_lock = threading.Lock()
+# Concurrent runs (spec: docs/spec-concurrent-runs.md). Up to MAX_RUNS tests
+# execute in parallel; the same test never runs twice at once because a healed
+# run rewrites its YAML file (selector write-back, F-5).
+MAX_RUNS = load_config(CONFIG_PATH)["max_concurrent_runs"]  # sized at startup
+_FINISHED_TTL_SECONDS = 60  # finished runs stay visible in live status this long
+
+LIVE_RUNS: dict[str, dict] = {}  # run_id -> live progress entry
+_slots = threading.BoundedSemaphore(MAX_RUNS)
+_active_guard = threading.Lock()  # protects LIVE_RUNS and _active_tests
+_active_tests: set[str] = set()
+
+
+class _Busy(Exception):
+    """A run cannot start now; str(self) is present tense, .past for skips."""
+
+    def __init__(self, now: str, past: str):
+        super().__init__(now)
+        self.past = past
+
+
+def _acquire(test_id: str) -> None:
+    with _active_guard:
+        if test_id in _active_tests:
+            raise _Busy(f"test '{test_id}' is already running",
+                        f"test '{test_id}' was already running when this "
+                        f"schedule fired")
+        if not _slots.acquire(blocking=False):
+            raise _Busy(f"all {MAX_RUNS} run slots are busy",
+                        f"all {MAX_RUNS} run slots were busy when this "
+                        f"schedule fired")
+        _active_tests.add(test_id)
+
+
+def _release(test_id: str) -> None:
+    with _active_guard:
+        _active_tests.discard(test_id)
+    _slots.release()
+
+
+def _live_snapshot() -> dict:
+    """Prune stale finished entries and return the multi-run status shape."""
+    now = time.monotonic()
+    with _active_guard:
+        for rid in [rid for rid, e in LIVE_RUNS.items()
+                    if e["ended"] is not None
+                    and now - e["ended"] > _FINISHED_TTL_SECONDS]:
+            del LIVE_RUNS[rid]
+        runs = [{"run_id": rid, "test_id": e["test_id"], "done": e["done"],
+                 "total": e["total"], "status": e["status"],
+                 "last_step": e["last_step"]} for rid, e in LIVE_RUNS.items()]
+        test_ids = sorted(_active_tests)
+    return {"active": sum(1 for r in runs if r["status"] == "running"),
+            "slots": MAX_RUNS, "runs": runs, "test_ids": test_ids}
 
 
 TEST_ID_RE = re.compile(r"^[a-z0-9-]+$")
@@ -83,48 +134,69 @@ def _test_file_for(test_id: str) -> Path | None:
 
 def _start_run(test_file: Path, trigger: str = "manual",
                schedule_id: str | None = None) -> None:
-    if not _run_lock.acquire(blocking=False):
-        raise HTTPException(409, "a run is already in progress")
-    threading.Thread(target=_execute, args=(test_file, trigger, schedule_id),
+    try:
+        test_def = load_test(test_file)
+    except Exception as e:
+        raise HTTPException(422, f"test file could not be parsed: {e}")
+    try:
+        _acquire(test_def.test.id)
+    except _Busy as e:
+        raise HTTPException(409, str(e))
+    threading.Thread(target=_execute,
+                     args=(test_def, test_file, trigger, schedule_id),
                      daemon=True).start()
 
 
 def _fire_scheduled(test_file: Path, schedule_id: str) -> None:
     """Run trigger for the scheduler thread: raises BusyError, never HTTP."""
-    if not _run_lock.acquire(blocking=False):
-        raise BusyError(
-            f"a run of test '{LIVE.get('test_id', '?')}' was in progress "
-            f"when this schedule fired")
-    threading.Thread(target=_execute, args=(test_file, "scheduled", schedule_id),
+    test_def = load_test(test_file)
+    try:
+        _acquire(test_def.test.id)
+    except _Busy as e:
+        raise BusyError(e.past)
+    threading.Thread(target=_execute,
+                     args=(test_def, test_file, "scheduled", schedule_id),
                      daemon=True).start()
 
 
-def _execute(test_file: Path, trigger: str = "manual",
+def _execute(test_def, test_file: Path, trigger: str = "manual",
              schedule_id: str | None = None):
+    """Runs in its own thread; the slot for test_def.test.id is already held."""
+    test_id = test_def.test.id
     cfg = load_config(CONFIG_PATH)
-    test_def = load_test(test_file)
-    LIVE.update(active=True, test_id=test_def.test.id, done=0,
-                total=len(test_def.test.steps), status="running", last_step="")
+    entry = {"test_id": test_id, "done": 0, "total": len(test_def.test.steps),
+             "status": "running", "last_step": "", "ended": None}
+    registered = False
+
+    def on_start(run_id):
+        nonlocal registered
+        with _active_guard:
+            LIVE_RUNS[run_id] = entry
+        registered = True
 
     def on_step(result, total):
-        LIVE.update(done=result.index + 1, total=total,
-                    last_step=f"#{result.index} {result.step_type}: {result.status}")
+        entry.update(done=result.index + 1, total=total,
+                     last_step=f"#{result.index} {result.step_type}: {result.status}")
 
     outcome = None
     try:
         outcome = run_test(test_def, cfg, session_factory, REPORTS_DIR,
-                           on_step=on_step, trigger=trigger, schedule_id=schedule_id)
+                           on_start=on_start, on_step=on_step,
+                           trigger=trigger, schedule_id=schedule_id)
         if any(s.status == "healed_then_passed" for s in outcome.steps):
             save_test(test_def, test_file)  # selector write-back (F-5)
         build_report(outcome.run_id, session_factory, REPORTS_DIR)
-        LIVE.update(status=outcome.status)
+        entry.update(status=outcome.status)
     except Exception as e:  # surface crashes in the UI instead of dying silently
-        LIVE.update(status="error", last_step=str(e))
+        entry.update(status="error", last_step=str(e))
     finally:
-        LIVE["active"] = False
-        _run_lock.release()
+        entry["ended"] = time.monotonic()
+        if not registered:  # crashed before a Run row existed; still show it
+            with _active_guard:
+                LIVE_RUNS[f"unstarted-{test_id}"] = entry
+        _release(test_id)
     if trigger == "scheduled" and schedule_id:
-        _after_scheduled_run(cfg, test_def.test.id, schedule_id, outcome)
+        _after_scheduled_run(cfg, test_id, schedule_id, outcome)
 
 
 def _after_scheduled_run(cfg, test_id: str, schedule_id: str, outcome):
@@ -159,7 +231,7 @@ def dashboard(request: Request):
     with session_factory() as db:
         runs = db.query(Run).order_by(Run.started_at.desc()).limit(10).all()
     return templates.TemplateResponse(request, "dashboard.html", {
-        "runs": _with_duration(runs), "tests": _test_index(), "live": LIVE})
+        "runs": _with_duration(runs), "tests": _test_index(), "live": _live_snapshot()})
 
 
 @app.post("/run")
@@ -175,7 +247,7 @@ def trigger_run(test: str = Form(...)):
 def status():
     with session_factory() as db:
         unread = db.query(Notification).filter(Notification.read_at.is_(None)).count()
-    return JSONResponse({**LIVE, "unread_notifications": unread})
+    return JSONResponse({**_live_snapshot(), "unread_notifications": unread})
 
 
 @app.get("/api/env")
@@ -230,7 +302,7 @@ def run_detail(request: Request, run_id: str):
 @app.get("/tests", response_class=HTMLResponse)
 def tests_list(request: Request):
     return templates.TemplateResponse(request, "tests_list.html", {
-        "tests": _test_index(), "live": LIVE})
+        "tests": _test_index(), "live": _live_snapshot()})
 
 
 @app.get("/tests/new", response_class=HTMLResponse)
@@ -246,7 +318,8 @@ def edit_test_page(request: Request, test_id: str):
         raise HTTPException(404, f"unknown test '{test_id}'")
     td = load_test(path)
     return templates.TemplateResponse(request, "test_editor.html", {
-        "mode": "edit", "test_json": json.dumps(td.model_dump(exclude_none=True))})
+        "mode": "edit", "test_json": json.dumps(td.model_dump(exclude_none=True)),
+        "test_id": test_id})
 
 
 # ---- Test management JSON API ----
@@ -436,7 +509,7 @@ def schedules_page(request: Request):
         schedules = db.query(Schedule).order_by(Schedule.created_at).all()
     return templates.TemplateResponse(request, "schedules.html", {
         "schedules": [_schedule_json(s) for s in schedules],
-        "tests": [e for e in _test_index() if e["valid"]], "live": LIVE,
+        "tests": [e for e in _test_index() if e["valid"]], "live": _live_snapshot(),
         "email_on": bool(load_config(CONFIG_PATH).get("email_notifications"))})
 
 
@@ -625,7 +698,7 @@ def show_test(request: Request, name: str):
         "td": td, "file": path.name, "error": error,
         "raw": path.read_text(encoding="utf-8") if td is None else None,
         "runs": runs, "runs_total": runs_total, "schedules": schedules,
-        "live": LIVE})
+        "live": _live_snapshot()})
 
 
 @app.get("/config", response_class=HTMLResponse)

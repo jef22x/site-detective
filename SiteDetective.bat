@@ -11,9 +11,15 @@ if %errorlevel%==0 goto open
 if not exist ".venv\Scripts\python.exe" (
     echo First-time setup: creating virtual environment...
     python -m venv .venv || goto err
-    .venv\Scripts\python.exe -m pip install -r requirements.txt || goto err
-    .venv\Scripts\python.exe -m playwright install chromium || goto err
 )
+
+rem Keep dependencies and browsers in sync on every launch (fast no-op when current).
+echo Checking dependencies...
+.venv\Scripts\python.exe -m pip install -q -r requirements.txt || goto err
+.venv\Scripts\python.exe -m playwright install chromium || goto err
+
+rem Fail fast with a readable error if the app can't even be imported.
+.venv\Scripts\python.exe -c "import app.main" || goto err
 
 echo Starting SiteDetective on port %PORT%...
 start "SiteDetective server" /min .venv\Scripts\python.exe -m uvicorn app.main:app --port %PORT%
@@ -35,7 +41,7 @@ start "" http://127.0.0.1:%PORT%
 exit /b 0
 
 :err
-echo Setup failed. Ensure Python 3.11+ is installed and on PATH.
+echo Setup failed. See the error above. Ensure Python 3.11+ is installed and on PATH.
 pause
 exit /b 1
 

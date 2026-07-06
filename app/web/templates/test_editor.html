@@ -2,7 +2,7 @@
 {% block content %}
 <div class="flex items-center justify-between mb-4">
   <h1 class="text-xl font-bold" id="page-title">New Test</h1>
-  <a href="/tests" class="text-slate-500 hover:underline">&larr; Back to tests</a>
+  <a href="{{ '/tests/' + test_id if test_id else '/tests' }}" class="text-slate-500 hover:underline">&larr; Back</a>
 </div>
 
 <!-- Header fields -->

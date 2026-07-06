@@ -24,7 +24,7 @@
     </p>
   </div>
   <div class="flex items-center gap-3">
-    <button onclick="runTest('{{ t.id }}')" {% if live.active %}disabled{% endif %}
+    <button onclick="runTest('{{ t.id }}')" {% if t.id in live.test_ids %}disabled{% endif %}
       class="run-btn bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 py-2 rounded font-medium">Run</button>
     <a href="/tests/{{ t.id }}/edit"
       class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-medium">Edit</a>

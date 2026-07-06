@@ -45,7 +45,8 @@ class RunOutcome:
 def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
              session_factory: sessionmaker[Session], reports_root: str | Path,
              headless: bool = True, on_step=None, logs_root: str | Path = "logs",
-             trigger: str = "manual", schedule_id: str | None = None) -> RunOutcome:
+             trigger: str = "manual", schedule_id: str | None = None,
+             on_start=None) -> RunOutcome:
     test = test_def.test
     # Per-test starting URL, falling back to the global one. Every fresh
     # browser context opens here, so tests don't need a leading navigate step.
@@ -59,6 +60,8 @@ def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
         db.add(run)
         db.commit()
         run_id = run.id
+    if on_start:
+        on_start(run_id)
 
     run_dir = Path(reports_root) / run_id
     shots_dir = run_dir / "screenshots"

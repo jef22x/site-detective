@@ -40,4 +40,8 @@ def test_unknown_test_404():
 def test_status_endpoint():
     r = client.get("/api/status")
     assert r.status_code == 200
-    assert "active" in r.json()
+    data = r.json()
+    assert isinstance(data["active"], int)
+    assert data["slots"] >= 1
+    assert isinstance(data["runs"], list)
+    assert isinstance(data["test_ids"], list)

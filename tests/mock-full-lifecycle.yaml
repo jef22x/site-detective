@@ -25,7 +25,6 @@ test:
   - type: login
     context: admin
   - type: assert_element
-    context: admin
     intent: The most recent order row in the orders table
     selector: table.wp-list-table tbody tr:first-child
   - type: click
@@ -33,7 +32,6 @@ test:
     intent: The order number link of the most recent order
     selector: table.wp-list-table tbody tr:first-child a.order-view
   - type: select
-    context: admin
     intent: The order status dropdown on the order edit screen
     selector: select#order_status
     value: wc-completed
@@ -46,6 +44,8 @@ test:
     intent: The Refund button in the order items panel
     selector: button.refund-items
   - type: assert_element
-    context: admin
     intent: The refund amount input that appears in the refund panel
     selector: '#refund_amount'
+  - type: screenshot
+    label: End of test
+    full_page: true

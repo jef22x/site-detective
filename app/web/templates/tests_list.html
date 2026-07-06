@@ -28,7 +28,7 @@
         </script></td>
         <td class="text-right pr-3 whitespace-nowrap">
           {% if t.valid %}
-          <button onclick="runTest('{{ t.id }}')" {% if live.active %}disabled{% endif %}
+          <button onclick="runTest('{{ t.id }}', this)" {% if t.id in live.test_ids %}disabled{% endif %}
             class="run-btn bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3 py-1 rounded">Run</button>
           <a href="/tests/{{ t.id }}/edit" class="text-blue-700 hover:underline ml-2">Edit</a>
           <button onclick="duplicateTest('{{ t.id }}')" class="text-slate-600 hover:underline ml-2">Duplicate</button>
@@ -61,10 +61,10 @@ async function apiPost(url) {
   if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
   return r.json();
 }
-async function runTest(id) {
+async function runTest(id, btn) {
   try {
     await apiPost(`/api/tests/${id}/run`);
-    document.querySelectorAll('.run-btn').forEach(b => b.disabled = true);
+    if (btn) btn.disabled = true;  // other tests may still be run concurrently
     toast(`Run started: ${id}`);
     poll();  // kick the live status bar in base.html
   } catch (e) { toast(e.message, true); }

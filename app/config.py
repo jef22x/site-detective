@@ -53,6 +53,14 @@ def load_config(path: str | Path) -> Dict[str, Any]:
         data["starting_url"] = data["store_url"]
     if data.get("starting_url"):
         data["store_url"] = data["starting_url"]
+    # How many tests may execute at the same time (spec: concurrent runs).
+    # Clamped to 1-10; the semaphore is sized at startup, so changes need
+    # a restart to take effect.
+    try:
+        n = int(data.get("max_concurrent_runs", 3))
+    except (TypeError, ValueError):
+        n = 3
+    data["max_concurrent_runs"] = max(1, min(10, n))
     return data
 
 

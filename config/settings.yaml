@@ -4,6 +4,7 @@ admin_user: "admin"
 admin_password: "changeme"
 product_id: "123"
 purchases_per_run: 1
+max_concurrent_runs: 3   # 1-10 tests may run at the same time (restart to apply)
 stripe_publishable_key: ""
 stripe_secret_key: ""
 
