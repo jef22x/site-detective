@@ -80,6 +80,11 @@ RULES: list[_Rule] = [
           contains=("Target page, context or browser has been closed", "Page crashed"),
           title="The browser page crashed or closed unexpectedly during the run.",
           hint="Re-run the test; if it recurs, the page may be exhausting memory."),
+    _Rule("assert_element_missing",
+          contains=("to exist, not found",),
+          title="The asserted element {selector} was not found on the page.",
+          hint=("The element may have been renamed or removed. Review the "
+                "step's selector, or enable healing.")),
     _Rule("element_timeout", timeout_with_selector=True,
           title="Could not find {selector} on the page within {timeout_ms} ms.",
           hint=("The element may have changed or the page didn't reach the "

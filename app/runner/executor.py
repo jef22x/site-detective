@@ -19,9 +19,9 @@ from ..logging_utils import log_error
 from ..schemas import Step, TestDefinition
 from . import healing
 from .errors import classify
-from .steps import AssertionFailure, execute_step
+from .steplog import StepLog
+from .steps import AssertionFailure, ElementNotFound, execute_step
 
-MAX_HEAL_ATTEMPTS = 2
 
 
 @dataclass
@@ -33,6 +33,11 @@ class StepOutcome:
     screenshot: str | None = None
     error: str | None = None  # friendly message (spec: docs/spec-friendly-run-errors.md)
     error_detail: str | None = None  # raw error text for debugging
+    selector: str | None = None  # final selector used (the healed one if healed)
+    definition: str | None = None  # JSON of the authored Step (pre-healing)
+    element_screenshot: str | None = None
+    # Execution log (spec: docs/spec-step-execution-logs.md); None for skips.
+    log: StepLog | None = None
 
 
 @dataclass
@@ -57,9 +62,17 @@ def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
         str(cfg["starting_url"]) if cfg.get("starting_url") else None)
     snapshot = {k: ("***" if k in SECRET_KEYS else v) for k, v in cfg.items()}
 
+    test_snapshot = mask_secrets(json.dumps({
+        "name": test.name or test.id,
+        "description": test.description,
+        "starting_url": start_url,
+        "defaults": test.defaults.model_dump(),
+    }), cfg)
+
     with session_factory() as db:
         run = Run(test_id=test.id, config_snapshot=json.dumps(snapshot, default=str),
-                  trigger=trigger, schedule_id=schedule_id)
+                  trigger=trigger, schedule_id=schedule_id,
+                  test_snapshot=test_snapshot)
         db.add(run)
         db.commit()
         run_id = run.id
@@ -90,8 +103,16 @@ def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
 
             try:
                 for i, step in enumerate(test.steps):
+                    # Dump the authored definition before execution: healing
+                    # mutates step.selector in place, and the page must show
+                    # what the author wrote (the healed selector is recorded
+                    # separately in StepOutcome.selector).
+                    definition = step.model_dump_json(exclude_none=True,
+                                                      exclude_defaults=True)
                     if failed:
-                        outcome.steps.append(StepOutcome(i, step.type, "skipped"))
+                        outcome.steps.append(
+                            StepOutcome(i, step.type, "skipped",
+                                        definition=definition))
                         continue
 
                     page = page_for(step.context)
@@ -102,6 +123,10 @@ def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
                                            test.defaults.healing, shots_dir, run_id,
                                            session_factory)
                     result.duration_ms = int((time.monotonic() - started) * 1000)
+                    result.definition = definition
+                    # step.selector now holds the healed selector when healing
+                    # rewrote it, i.e. the selector that actually ran.
+                    result.selector = step.selector
 
                     if step.selector:
                         # Center the acted-on element so a following screenshot
@@ -112,6 +137,23 @@ def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
                                 timeout=2000)
                         except Exception:
                             pass
+                        # Element screenshot: visual record of what the step
+                        # acted on. Skipped on failure (nothing matched) and
+                        # for type steps with templated values, where the
+                        # filled input would render the resolved secret.
+                        if (result.status in ("passed", "healed_then_passed")
+                                and not (step.type == "type"
+                                         and "{{" in (step.value or ""))):
+                            shot = shots_dir / f"step_{i:03d}_element.png"
+                            try:
+                                page.locator(step.selector).first.screenshot(
+                                    path=str(shot), timeout=2000)
+                                result.element_screenshot = str(shot)
+                                if result.log:
+                                    result.log.add("screenshot",
+                                                   "Captured element screenshot")
+                            except Exception:
+                                pass  # detached/zero-size element: no image
                     if step.type == "screenshot":
                         label = step.label or f"step_{i:03d}_{step.type}"
                         shot = shots_dir / f"{label}.png"
@@ -120,8 +162,16 @@ def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
                                 _prepare_full_page(page)
                             page.screenshot(path=str(shot), full_page=step.full_page)
                             result.screenshot = str(shot)
+                            if result.log:
+                                result.log.add(
+                                    "screenshot",
+                                    "Captured full-page screenshot" if step.full_page
+                                    else "Captured screenshot")
                         except Exception:
                             pass  # a crashed page must not mask the real step error
+                    if result.log:
+                        result.log.add("info", f"Step {result.status} in "
+                                               f"{result.duration_ms} ms")
 
                     outcome.steps.append(result)
                     if on_step:
@@ -153,10 +203,14 @@ def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
         run.finished_at = _now()
         for s in outcome.steps:
             db.add(StepResult(run_id=run_id, step_index=s.index, step_type=s.step_type,
-                              selector=None, status=s.status, duration_ms=s.duration_ms,
+                              selector=s.selector, status=s.status,
+                              duration_ms=s.duration_ms,
                               screenshot_path=s.screenshot,
+                              element_screenshot_path=s.element_screenshot,
+                              definition=mask_secrets(s.definition, cfg),
                               error=mask_secrets(s.error, cfg),
-                              error_detail=mask_secrets(s.error_detail, cfg)))
+                              error_detail=mask_secrets(s.error_detail, cfg),
+                              log=s.log.to_json() if s.log else None))
         db.commit()
     return outcome
 
@@ -206,58 +260,111 @@ def _run_one_step(page, step: Step, index: int, cfg, timeout: int, retries: int,
                   healing_allowed: bool, shots_dir: Path, run_id: str,
                   session_factory) -> StepOutcome:
     last_err: Exception | None = None
+    slog = StepLog(cfg)
+    attempts = retries + 1
 
-    for _attempt in range(retries + 1):
+    for attempt in range(1, attempts + 1):
         try:
-            execute_step(page, step, cfg, timeout)
-            return StepOutcome(index, step.type, "passed")
+            execute_step(page, step, cfg, timeout, log=slog)
+            return StepOutcome(index, step.type, "passed", log=slog)
+        except ElementNotFound as e:
+            # exists=True and the selector matched nothing: same shape as a
+            # renamed-selector timeout, so give healing a chance below.
+            last_err = e
+            break
         except AssertionFailure as e:
-            # Assertions are never healed or retried; the element genuinely
-            # failed the check.
-            return StepOutcome(index, step.type, "failed", error=str(e))
+            # Genuine mismatch (element present when it should be absent, or
+            # text differs): a new selector can't change the page, so healing
+            # never applies and the step is not retried.
+            if healing_allowed and step.selector:
+                slog.add("healing", "Healing skipped: the selector resolved, but "
+                                    "the page state failed the assertion — a new "
+                                    "selector would not help")
+            slog.add("error", str(e))
+            return StepOutcome(index, step.type, "failed", error=str(e), log=slog)
         except PlaywrightTimeout as e:
             last_err = e
         except Exception as e:
             last_err = e
+        if attempt < attempts:
+            slog.add("retry", f"Attempt {attempt} of {attempts} failed — retrying: "
+                              f"{classify(last_err, step=step, timeout_ms=timeout).title}")
 
     # Selector-shaped failure: try healing if this step has a selector.
-    if healing_allowed and step.selector and isinstance(last_err, PlaywrightTimeout):
+    if healing_allowed and step.selector and isinstance(
+            last_err, (PlaywrightTimeout, ElementNotFound)):
+        if step.intent:
+            slog.add("healing", f"Selector `{step.selector}` failed — asking AI "
+                                f"to locate \"{step.intent}\"")
+        else:
+            slog.add("healing", f"Selector `{step.selector}` failed — step has no "
+                                f"intent; AI is guessing from the DOM alone")
         before = shots_dir / f"step_{index:03d}_healing_before.png"
         try:
             page.screenshot(path=str(before))
-            shot_bytes = before.read_bytes()
+            slog.add("screenshot", "Saved 'before' screenshot for the healing record")
         except Exception:
-            shot_bytes = b""
-        dom_map = page.content()[:50000]
-
-        for _ in range(MAX_HEAL_ATTEMPTS):
-            candidate = healing.propose_selector(step.intent or "", dom_map, shot_bytes, cfg)
-            if not candidate:
-                break
+            pass
+        model = str((cfg.get("ollama") or {}).get("model") or "").strip()
+        if not model:
+            slog.add("healing", "No Ollama model configured (ollama.model) — "
+                                "healing skipped")
+        else:
+            dom = healing.compact_dom(page.content())
+            chunks, dropped = healing.chunk_dom(dom, cfg)
+            n = len(chunks)
+            slog.add("healing", f"Page HTML compacted to {len(dom)} chars "
+                                f"→ {n} chunk(s)")
+            if dropped:
+                slog.add("healing", f"Page too large: {dropped} chars beyond "
+                                    f"chunk {n} not examined")
+            candidate = None
             accepted = False
-            for variant in healing.candidate_variants(candidate):
-                try:
-                    if page.locator(variant).count() > 0:
-                        execute_step(page, step, cfg, timeout, selector_override=variant)
-                        candidate = variant
-                        accepted = True
-                        break
-                except Exception:
+            for i, chunk in enumerate(chunks, 1):
+                proposal = healing.propose_selector(step.intent or "", chunk, i, n, cfg)
+                if proposal is healing.NOT_IN_CHUNK:
+                    slog.add("healing", f"Chunk {i}/{n}: model reports the element "
+                                        f"is not in this fragment")
                     continue
+                if proposal is None:
+                    slog.add("healing", f"Chunk {i}/{n}: AI produced no usable "
+                                        f"selector (Ollama unavailable or prose reply)")
+                    continue
+                candidate = proposal
+                slog.add("healing", f"Chunk {i}/{n}: AI ({model}) proposed `{candidate}`")
+                for variant in healing.candidate_variants(candidate):
+                    try:
+                        if page.locator(variant).count() > 0:
+                            execute_step(page, step, cfg, timeout,
+                                         selector_override=variant, log=slog)
+                            candidate = variant
+                            accepted = True
+                            break
+                        slog.add("healing", f"Candidate `{variant}` matched no "
+                                            f"elements — rejected")
+                    except Exception:
+                        slog.add("healing", f"Candidate `{variant}` did not work — rejected")
+                        continue
+                if accepted:
+                    break
+                if i < n:
+                    slog.add("healing", f"Candidate `{candidate}` did not match "
+                                        f"the live page — trying next chunk")
             with session_factory() as db:
                 db.add(HealingEvent(run_id=run_id, step_index=index,
                                     old_selector=step.selector, proposed_selector=candidate,
-                                    accepted=accepted,
-                                    model=cfg.get("ollama", {}).get("model"),
+                                    accepted=accepted, model=model,
                                     before_screenshot=str(before)))
                 db.commit()
             if accepted:
+                slog.add("healing", f"Healed: retried with `{candidate}` — passed")
                 step.selector = candidate  # caller persists write-back (F-5)
-                return StepOutcome(index, step.type, "healed_then_passed")
+                return StepOutcome(index, step.type, "healed_then_passed", log=slog)
 
     if last_err is None:
-        return StepOutcome(index, step.type, "failed", error="unknown")
+        return StepOutcome(index, step.type, "failed", error="unknown", log=slog)
     friendly = classify(last_err, step=step, timeout_ms=timeout)
     detail = "".join(traceback.format_exception_only(last_err)).strip()
+    slog.add("error", friendly.title)
     return StepOutcome(index, step.type, "failed",
-                       error=friendly.summary(), error_detail=detail)
+                       error=friendly.summary(), error_detail=detail, log=slog)

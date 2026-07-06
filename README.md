@@ -21,7 +21,7 @@ re-locate elements when a stored selector breaks.
 
 - Python 3.11 or higher
 - Chromium (installed via Playwright)
-- [Ollama](https://ollama.ai) with `qwen2.5-vl:7b` (optional, for selector healing)
+- [Ollama](https://ollama.ai) with a coding model of your choice (optional, for selector healing)
 
 ## Setup
 
@@ -81,15 +81,31 @@ Run a lightweight subset of tests before deployments or during development. HTML
 ## Healing
 
 Set `ollama.enabled: true` in `config/settings.yaml` with Ollama running
-`qwen2.5-vl:7b`. When a selector fails, the model proposes a replacement from
-the step's `intent` + DOM + screenshot; accepted fixes are written back to the
-test file and logged in the healing audit trail. Ollama being offline never
-blocks runs.
+the model of your choice (`ollama.model` — any installed text-capable model;
+there is no hard-coded default). When a selector fails, the model proposes a
+replacement from the step's `intent` + a compacted copy of the page HTML;
+accepted fixes are written back to the test file and logged in the healing
+audit trail. A "before" screenshot is saved for the audit record but is not
+sent to the model. Ollama being offline never blocks runs.
+
+Healing applies to any step whose selector matches nothing — including
+`assert_element` with `exists: true`. Assertions that fail for other reasons
+(element present when it should be absent, text mismatch) are never healed;
+the step log states why.
+
+Healing works within small context windows: the HTML is chunked to fit
+`ollama.num_ctx` (default 4096, sent with every request) and chunks are sent
+one at a time until a proposed selector actually matches the live page. The
+Home page's Environment panel shows the configured model, its maximum
+context, and all installed models.
 
 **How it works:**
 1. A selector fails during test execution
-2. A screenshot is captured and the DOM is extracted
-3. Ollama analyzes the step's human-readable intent + DOM + screenshot
+2. The page `<body>` is extracted and compacted (scripts, styles, comments,
+   and selector-useless attributes stripped), then split into tag-aligned
+   chunks sized from `ollama.num_ctx` (capped by `ollama.max_chunks`)
+3. Ollama analyzes the step's human-readable intent + each HTML chunk in
+   turn, answering NONE when the element isn't in the fragment
 4. One or more replacement selectors are proposed
 5. You review and accept/reject fixes in the Web UI
 6. Accepted fixes are persisted to the YAML test file

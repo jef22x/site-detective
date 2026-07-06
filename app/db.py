@@ -31,6 +31,10 @@ class Run(Base):
     trigger: Mapped[str] = mapped_column(default="manual")  # manual|scheduled
     schedule_id: Mapped[str | None] = mapped_column(default=None)
     skip_reason: Mapped[str | None] = mapped_column(default=None)  # set when status == "skipped"
+    # JSON snapshot of the test header at run time: {"name", "description",
+    # "starting_url" (effective, masked), "defaults"} — the page must show
+    # the test as it ran, not as it is now (spec: docs/spec-run-detail-page.md)
+    test_snapshot: Mapped[str | None] = mapped_column(default=None)
 
 
 class Schedule(Base):
@@ -77,6 +81,12 @@ class StepResult(Base):
     screenshot_path: Mapped[str | None] = mapped_column(default=None)
     error: Mapped[str | None] = mapped_column(default=None)  # friendly message
     error_detail: Mapped[str | None] = mapped_column(default=None)  # raw error text
+    # JSON of the authored Step definition (values un-resolved, secrets masked)
+    definition: Mapped[str | None] = mapped_column(default=None)
+    element_screenshot_path: Mapped[str | None] = mapped_column(default=None)
+    # JSON array of {t, kind, msg} execution-log entries, masked at write
+    # time (spec: docs/spec-step-execution-logs.md); null for skips/legacy
+    log: Mapped[str | None] = mapped_column(default=None)
 
 
 class HealingEvent(Base):
@@ -117,13 +127,22 @@ def init_db(db_path: str | Path) -> sessionmaker[Session]:
         "schedule_id": "ALTER TABLE runs ADD COLUMN schedule_id TEXT",
         "skip_reason": "ALTER TABLE runs ADD COLUMN skip_reason TEXT",
         "error_summary": "ALTER TABLE runs ADD COLUMN error_summary TEXT",
+        "test_snapshot": "ALTER TABLE runs ADD COLUMN test_snapshot TEXT",
     }
     for col, ddl in migrations.items():
         if col not in run_cols:
             with engine.begin() as conn:
                 conn.execute(text(ddl))
     step_cols = {c["name"] for c in inspect(engine).get_columns("steps")}
-    if "error_detail" not in step_cols:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE steps ADD COLUMN error_detail TEXT"))
+    step_migrations = {
+        "error_detail": "ALTER TABLE steps ADD COLUMN error_detail TEXT",
+        "definition": "ALTER TABLE steps ADD COLUMN definition TEXT",
+        "element_screenshot_path":
+            "ALTER TABLE steps ADD COLUMN element_screenshot_path TEXT",
+        "log": "ALTER TABLE steps ADD COLUMN log TEXT",
+    }
+    for col, ddl in step_migrations.items():
+        if col not in step_cols:
+            with engine.begin() as conn:
+                conn.execute(text(ddl))
     return sessionmaker(engine, expire_on_commit=False)

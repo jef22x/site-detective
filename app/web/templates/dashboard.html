@@ -43,14 +43,37 @@
     <script>
       fetch('/api/env').then(r => r.json()).then(e => {
         const b = (ok) => ok ? '✅' : '❌';
+        const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+        const fmt = (n) => n == null ? '?' : Number(n).toLocaleString();
+        let ollama;
+        const o = e.ollama;
+        if (!o.enabled) {
+          ollama = `⚪ Ollama healing disabled`;
+        } else if (!o.ok) {
+          ollama = `❌ Ollama unreachable at <code>${esc(o.url || '—')}</code>`;
+        } else {
+          const list = o.models.map(m =>
+            `${esc(m.name)} (${m.size_gb} GB${m.max_ctx ? ', max ctx ' + fmt(m.max_ctx) : ''})`).join(', ');
+          let line;
+          if (!o.configured_model) {
+            line = `⚠ No healing model set — choose one in Config (ollama.model)`;
+          } else if (!o.model_present) {
+            line = `⚠ Healing model <code>${esc(o.configured_model)}</code> is not installed`;
+          } else {
+            line = `Healing model: <code>${esc(o.configured_model)}</code> (installed) · ` +
+                   `context: ${fmt(o.num_ctx)} requested / ${fmt(o.model_max_ctx)} max`;
+          }
+          ollama = `✅ Ollama — <code>${esc(o.url)}</code><br>` +
+                   `<span class="ml-5">${line}</span><br>` +
+                   `<span class="ml-5">Installed models: ${list || 'none'}</span>` +
+                   (o.warning ? `<br><span class="ml-5">⚠ ${esc(o.warning)}</span>` : '');
+        }
         document.getElementById('env').innerHTML =
-          `${b(e.starting_url.ok)} Default starting URL: <code>${e.starting_url.url || '—'}</code><br>` +
+          `${b(e.starting_url.ok)} Default starting URL: <code>${esc(e.starting_url.url || '—')}</code><br>` +
           (e.smtp.configured
-            ? `${b(e.smtp.ok)} SMTP: <code>${e.smtp.host}</code>${e.smtp.error ? ' — ' + e.smtp.error : ''}<br>`
+            ? `${b(e.smtp.ok)} SMTP: <code>${esc(e.smtp.host)}</code>${e.smtp.error ? ' — ' + esc(e.smtp.error) : ''}<br>`
             : `⚪ Email notifications not configured<br>`) +
-          (e.ollama.enabled
-            ? `${b(e.ollama.ok)} Ollama ${e.ollama.model_present ? '(model ready)' : '(model missing)'}`
-            : `⚪ Ollama healing disabled`);
+          ollama;
       });
       async function createExample() {
         try {

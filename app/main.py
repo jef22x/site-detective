@@ -279,6 +279,55 @@ def api_runs(offset: int = 0, limit: int = 20):
          "started_at": r.started_at.strftime("%Y-%m-%d %H:%M:%S")} for r in runs]})
 
 
+# Fixed display names for step types; a bare .title() would render
+# "Assert_Element". Unknown/future types fall back in _step_type_label.
+STEP_TYPE_LABELS = {
+    "navigate": "Navigate", "click": "Click", "type": "Type",
+    "select": "Select", "wait": "Wait", "assert_element": "Assert Element",
+    "screenshot": "Screenshot", "login": "Login",
+}
+
+
+def _step_type_label(step_type: str) -> str:
+    return STEP_TYPE_LABELS.get(step_type, step_type.replace("_", " ").title())
+
+
+def _parse_log(raw: str | None) -> list | None:
+    """Execution-log JSON -> entry list; null/invalid/empty -> no section."""
+    try:
+        data = json.loads(raw) if raw else None
+        return data if isinstance(data, list) and data else None
+    except Exception:
+        return None
+
+
+def _parse_json(raw: str | None) -> dict | None:
+    try:
+        data = json.loads(raw) if raw else None
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _test_info_for_run(run: Run) -> dict | None:
+    """Test header shown on the run page: the run-time snapshot, or for
+    pre-snapshot runs a best-effort read of the current test file."""
+    info = _parse_json(run.test_snapshot)
+    if info:
+        return info
+    path = _test_file_for(run.test_id)
+    if not path:
+        return None
+    try:
+        test = load_test(path).test
+    except Exception:
+        return None
+    cfg = load_config(CONFIG_PATH)
+    return {"name": test.name or test.id, "description": test.description,
+            "starting_url": test.starting_url or cfg.get("starting_url"),
+            "defaults": test.defaults.model_dump()}
+
+
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
 def run_detail(request: Request, run_id: str):
     with session_factory() as db:
@@ -291,10 +340,17 @@ def run_detail(request: Request, run_id: str):
     for s in steps:
         s.shot_url = (f"/artifacts/{run_id}/screenshots/{Path(s.screenshot_path).name}"
                       if s.screenshot_path else None)
+        s.element_shot_url = (
+            f"/artifacts/{run_id}/screenshots/{Path(s.element_screenshot_path).name}"
+            if s.element_screenshot_path else None)
+        s.type_label = _step_type_label(s.step_type)
+        s.defn = _parse_json(s.definition)
+        s.log_entries = _parse_log(s.log)
     has_report = (REPORTS_DIR / run_id / "report.html").exists()
     _with_duration([run])
     return templates.TemplateResponse(request, "run_detail.html", {
-        "run": run, "steps": steps, "healings": healings, "has_report": has_report})
+        "run": run, "steps": steps, "healings": healings, "has_report": has_report,
+        "test_info": _test_info_for_run(run)})
 
 
 # ---- Test management pages ----
