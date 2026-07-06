@@ -1,21 +1,186 @@
 {% extends "base.html" %}
 {% block content %}
-<h1 class="text-xl font-bold mb-3">Configuration</h1>
-{% if error %}
-<div class="bg-red-50 border border-red-300 text-red-700 rounded p-3 mb-3 text-sm whitespace-pre-wrap">{{ error }}</div>
-{% endif %}
-<div class="grid md:grid-cols-2 gap-6">
-  <section>
-    <h2 class="font-semibold mb-2">Current (secrets masked)</h2>
-    <pre class="bg-white border border-slate-200 rounded p-3 text-sm">{{ masked }}</pre>
+<h1 class="text-xl font-bold mb-4">Configuration</h1>
+
+<div class="max-w-3xl space-y-6">
+  <section class="bg-white rounded-lg border border-slate-200 p-5">
+    <h2 class="font-semibold text-lg mb-3">Site under test</h2>
+    <div class="grid gap-4 sm:grid-cols-2">
+      <div class="sm:col-span-2">
+        <label class="block text-sm font-medium mb-1">Starting URL</label>
+        <input id="c-starting-url" type="url" value="{{ cfg.starting_url or '' }}"
+          placeholder="https://example.com"
+          class="w-full border border-slate-300 rounded px-3 py-2">
+        <p class="text-xs text-slate-500 mt-1">The site your tests run against; every run opens this first.</p>
+        <p class="err text-xs text-red-600 mt-1 hidden" data-err="starting_url"></p>
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Admin user</label>
+        <input id="c-admin-user" type="text" value="{{ cfg.admin_user or '' }}"
+          class="w-full border border-slate-300 rounded px-3 py-2">
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Admin password</label>
+        <input id="c-admin-password" type="password"
+          placeholder="{{ 'Leave blank to keep current value' if admin_password_set else 'Not set' }}"
+          class="w-full border border-slate-300 rounded px-3 py-2">
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Product ID</label>
+        <input id="c-product-id" type="text" value="{{ cfg.product_id or '' }}"
+          class="w-full border border-slate-300 rounded px-3 py-2">
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Purchases per run</label>
+        <input id="c-purchases-per-run" type="number" min="1" value="{{ cfg.purchases_per_run or 1 }}"
+          class="w-full border border-slate-300 rounded px-3 py-2">
+        <p class="err text-xs text-red-600 mt-1 hidden" data-err="purchases_per_run"></p>
+      </div>
+    </div>
   </section>
-  <section>
-    <h2 class="font-semibold mb-2">Edit raw settings.yaml</h2>
+
+  <section class="bg-white rounded-lg border border-slate-200 p-5">
+    <h2 class="font-semibold text-lg mb-3">Runs</h2>
+    <label class="block text-sm font-medium mb-1">Max concurrent runs</label>
+    <input id="c-max-concurrent-runs" type="number" min="1" max="10" value="{{ cfg.max_concurrent_runs }}"
+      class="w-40 border border-slate-300 rounded px-3 py-2">
+    <p class="text-xs text-slate-500 mt-1">1–10 tests may run at the same time. Changing this needs a restart to take effect.</p>
+    <p class="err text-xs text-red-600 mt-1 hidden" data-err="max_concurrent_runs"></p>
+  </section>
+
+  <section class="bg-white rounded-lg border border-slate-200 p-5">
+    <h2 class="font-semibold text-lg mb-3">Healing (Ollama)</h2>
+    <label class="inline-flex items-center gap-2 text-sm mb-3">
+      <input id="c-ollama-enabled" type="checkbox" {% if ollama.enabled %}checked{% endif %} class="w-4 h-4">
+      Enabled
+    </label>
+    <div class="grid gap-4 sm:grid-cols-2">
+      <div>
+        <label class="block text-sm font-medium mb-1">Ollama URL</label>
+        <input id="c-ollama-url" type="text" value="{{ ollama.url or '' }}"
+          class="w-full border border-slate-300 rounded px-3 py-2">
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Model</label>
+        <input id="c-ollama-model" type="text" value="{{ ollama.model or '' }}"
+          class="w-full border border-slate-300 rounded px-3 py-2">
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Context window (num_ctx)</label>
+        <input id="c-ollama-num-ctx" type="number" min="1" value="{{ ollama.num_ctx or 4096 }}"
+          class="w-full border border-slate-300 rounded px-3 py-2">
+        <p class="err text-xs text-red-600 mt-1 hidden" data-err="ollama_num_ctx"></p>
+      </div>
+    </div>
+    <div id="ollama-status" class="text-sm text-slate-600 mt-3">Checking…</div>
+  </section>
+
+  <section class="bg-white rounded-lg border border-slate-200 p-5">
+    <h2 class="font-semibold text-lg mb-3">Notifications</h2>
+    <label class="inline-flex items-center gap-2 text-sm mb-3">
+      <input id="c-email-notifications" type="checkbox" {% if cfg.email_notifications %}checked{% endif %} class="w-4 h-4">
+      Email notifications enabled
+    </label>
+    <div>
+      <label class="block text-sm font-medium mb-1">Notify email to</label>
+      <input id="c-notify-email-to" type="email" value="{{ cfg.notify_email_to or '' }}"
+        placeholder="you@example.com"
+        class="w-full border border-slate-300 rounded px-3 py-2">
+      <p class="err text-xs text-red-600 mt-1 hidden" data-err="notify_email_to"></p>
+    </div>
+    <p class="text-xs text-slate-500 mt-2">
+      {% if env.smtp.configured %}
+        {{ '✅' if env.smtp.ok else '❌' }} SMTP: <code>{{ env.smtp.host }}</code>{% if env.smtp.error %} — {{ env.smtp.error }}{% endif %}
+      {% else %}
+        ⚪ SMTP not configured. Set SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD/SMTP_FROM in <code>.env</code>.
+      {% endif %}
+    </p>
+  </section>
+
+  <div class="flex items-center gap-3">
+    <button id="btn-save" onclick="saveConfig()"
+      class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded font-medium">Save settings</button>
+    <span id="save-status" class="text-sm text-slate-500"></span>
+  </div>
+
+  <details class="bg-white rounded-lg border border-slate-200 p-5">
+    <summary class="font-semibold text-lg cursor-pointer select-none">Advanced: raw settings.yaml</summary>
+    {% if error %}
+    <div class="bg-red-50 border border-red-300 text-red-700 rounded p-3 my-3 text-sm whitespace-pre-wrap">{{ error }}</div>
+    {% endif %}
+    <p class="text-sm text-slate-500 mt-3 mb-2">For settings not covered above (e.g. Stripe keys). Secrets are masked below; edit the file directly to change them.</p>
+    <pre class="bg-slate-50 border border-slate-200 rounded p-3 text-sm mb-3">{{ masked }}</pre>
     <form method="post">
       <textarea name="content" rows="18" spellcheck="false"
         class="w-full font-mono text-sm border border-slate-300 rounded p-3">{{ content }}</textarea>
-      <button class="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Save</button>
+      <button class="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Save raw YAML</button>
     </form>
-  </section>
+  </details>
 </div>
+
+<div id="cfg-toast" class="hidden fixed bottom-6 right-6 text-white px-4 py-2 rounded shadow-lg"></div>
+<script>
+function toast(msg, isError) {
+  const el = document.getElementById('cfg-toast');
+  el.textContent = msg;
+  el.className = 'fixed bottom-6 right-6 text-white px-4 py-2 rounded shadow-lg ' +
+                 (isError ? 'bg-red-600' : 'bg-slate-900');
+  el.classList.remove('hidden');
+  setTimeout(() => el.classList.add('hidden'), 4000);
+}
+
+function checkOllama() {
+  fetch('/api/env').then(r => r.json()).then(e => {
+    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const fmt = (n) => n == null ? '?' : Number(n).toLocaleString();
+    const o = e.ollama;
+    const box = document.getElementById('ollama-status');
+    if (!o.enabled) { box.innerHTML = '⚪ Healing disabled'; return; }
+    if (!o.ok) { box.innerHTML = `❌ Ollama unreachable at <code>${esc(o.url || '—')}</code>`; return; }
+    if (!o.configured_model) { box.innerHTML = '⚠ No healing model set'; return; }
+    if (!o.model_present) { box.innerHTML = `⚠ Model <code>${esc(o.configured_model)}</code> is not installed`; return; }
+    box.innerHTML = `✅ Model <code>${esc(o.configured_model)}</code> installed · ` +
+      `context: ${fmt(o.num_ctx)} requested / ${fmt(o.model_max_ctx)} max` +
+      (o.warning ? `<br>⚠ ${esc(o.warning)}` : '');
+  }).catch(() => {});
+}
+checkOllama();
+
+async function saveConfig() {
+  document.querySelectorAll('.err').forEach(el => { el.classList.add('hidden'); el.textContent = ''; });
+  const body = {
+    starting_url: document.getElementById('c-starting-url').value.trim(),
+    admin_user: document.getElementById('c-admin-user').value.trim(),
+    admin_password: document.getElementById('c-admin-password').value,
+    product_id: document.getElementById('c-product-id').value.trim(),
+    purchases_per_run: +document.getElementById('c-purchases-per-run').value,
+    max_concurrent_runs: +document.getElementById('c-max-concurrent-runs').value,
+    ollama_enabled: document.getElementById('c-ollama-enabled').checked,
+    ollama_url: document.getElementById('c-ollama-url').value.trim(),
+    ollama_model: document.getElementById('c-ollama-model').value.trim(),
+    ollama_num_ctx: +document.getElementById('c-ollama-num-ctx').value,
+    email_notifications: document.getElementById('c-email-notifications').checked,
+    notify_email_to: document.getElementById('c-notify-email-to').value.trim(),
+  };
+  try {
+    const r = await fetch('/api/config', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    if (!r.ok) {
+      const detail = (await r.json()).detail;
+      if (detail && typeof detail === 'object') {
+        for (const [key, msg] of Object.entries(detail)) {
+          const el = document.querySelector(`[data-err="${key}"]`);
+          if (el) { el.textContent = msg; el.classList.remove('hidden'); }
+        }
+        throw new Error('Please fix the highlighted fields');
+      }
+      throw new Error(detail || r.statusText);
+    }
+    document.getElementById('c-admin-password').value = '';
+    document.getElementById('save-status').textContent = `Saved at ${new Date().toLocaleTimeString()}`;
+    toast('Settings saved');
+    checkOllama();
+  } catch (e) { toast(e.message, true); }
+}
+</script>
 {% endblock %}

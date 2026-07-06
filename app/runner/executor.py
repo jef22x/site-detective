@@ -54,7 +54,7 @@ def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
              session_factory: sessionmaker[Session], reports_root: str | Path,
              headless: bool = True, on_step=None, logs_root: str | Path = "logs",
              trigger: str = "manual", schedule_id: str | None = None,
-             on_start=None) -> RunOutcome:
+             on_start=None, run_id: str | None = None) -> RunOutcome:
     test = test_def.test
     # Per-test starting URL, falling back to the global one. Every fresh
     # browser context opens here, so tests don't need a leading navigate step.
@@ -70,9 +70,15 @@ def run_test(test_def: TestDefinition, cfg: Dict[str, Any],
     }), cfg)
 
     with session_factory() as db:
-        run = Run(test_id=test.id, config_snapshot=json.dumps(snapshot, default=str),
-                  trigger=trigger, schedule_id=schedule_id,
-                  test_snapshot=test_snapshot)
+        # A caller (the web layer) may already have minted the run id so it
+        # can redirect the browser there before this thread starts; if not,
+        # Run.id falls back to its own default.
+        run_kwargs = dict(test_id=test.id, config_snapshot=json.dumps(snapshot, default=str),
+                          trigger=trigger, schedule_id=schedule_id,
+                          test_snapshot=test_snapshot)
+        if run_id:
+            run_kwargs["id"] = run_id
+        run = Run(**run_kwargs)
         db.add(run)
         db.commit()
         run_id = run.id

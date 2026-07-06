@@ -33,15 +33,14 @@
         }
         const el = document.getElementById('live');
         if (s.active > 0) {
-          const running = s.runs.filter(r => r.status === 'running');
           el.textContent = `Running ${s.active}/${s.slots} slots — ` +
-            running.map(r => `${r.test_id} ${r.done}/${r.total}`).join(' · ');
+            s.runs.map(r => `${r.test_name} ${r.done}/${r.total}`).join(' · ');
           setTimeout(poll, 1000);
           window._wasActive = true;
         } else if (window._wasActive) {
           location.reload();
-        } else if (s.runs && s.runs.length) {
-          el.textContent = `Last run: ${s.runs[s.runs.length - 1].status}`;
+        } else if (s.last_finished) {
+          el.textContent = `Last run: ${s.last_finished.test_name} ${s.last_finished.status}`;
         }
       } catch (e) {}
     }

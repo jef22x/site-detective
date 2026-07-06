@@ -91,16 +91,17 @@
   <h2 class="font-semibold text-lg mb-3">Active runs ({{ live.active }}/{{ live.slots }} slots)</h2>
   <table class="w-full text-sm">
     <thead><tr class="text-left text-slate-500 border-b">
-      <th class="py-2">Test</th><th>Progress</th><th>Last step</th><th>Status</th></tr></thead>
+      <th class="py-2">Run ID</th><th>Test</th><th>Progress</th><th>Last step</th><th>Status</th></tr></thead>
     <tbody>
       {% for r in live.runs %}
       <tr class="border-b border-slate-100">
-        <td class="py-2">{{ r.test_id }}</td>
+        <td class="py-2"><a class="text-blue-700 hover:underline font-mono text-xs"
+               href="/runs/{{ r.run_id }}">{{ r.run_id[:12] }}…</a></td>
+        <td>{% if r.test_id in test_names %}<a class="text-blue-700 hover:underline" href="/tests/{{ r.test_id }}">{{ r.test_name }}</a>
+            {% else %}{{ r.test_name }}{% endif %}</td>
         <td>{{ r.done }}/{{ r.total }}</td>
         <td class="text-slate-500">{{ r.last_step or '—' }}</td>
-        <td><span class="px-2 py-0.5 rounded-full text-white text-xs
-          {% if r.status == 'passed' %}bg-green-600{% elif r.status == 'running' %}bg-blue-600
-          {% else %}bg-red-600{% endif %}">{{ r.status }}</span></td>
+        <td><span class="px-2 py-0.5 rounded-full text-white text-xs bg-blue-600">{{ r.status }}</span></td>
       </tr>
       {% endfor %}
     </tbody>
@@ -116,11 +117,14 @@
   <div class="overflow-x-auto">
   <table class="w-full text-sm">
     <thead><tr class="text-left text-slate-500 border-b">
-      <th class="py-2">Test</th><th>Status</th><th>Started</th><th>Duration</th><th>Run ID</th></tr></thead>
+      <th class="py-2">Run ID</th><th>Test</th><th>Status</th><th>Started</th><th>Duration</th></tr></thead>
     <tbody>
       {% for r in runs %}
       <tr class="border-b border-slate-100 hover:bg-slate-50">
-        <td class="py-2">{{ r.test_id }}
+        <td class="py-2"><a class="text-blue-700 hover:underline font-mono text-xs"
+               href="/runs/{{ r.id }}">{{ r.id[:12] }}…</a></td>
+        <td>{% if r.test_id in test_names %}<a class="text-blue-700 hover:underline" href="/tests/{{ r.test_id }}">{{ test_names[r.test_id] }}</a>
+            {% else %}{{ r.test_id }}{% endif %}
           {% if r.trigger == 'scheduled' %}<span title="Started by a schedule">🕐</span>{% endif %}</td>
         <td><span class="px-2 py-0.5 rounded-full text-white text-xs
           {% if r.status == 'passed' %}bg-green-600{% elif r.status == 'running' %}bg-blue-600
@@ -128,8 +132,6 @@
           {% else %}bg-red-600{% endif %}">{{ r.status }}</span></td>
         <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
         <td class="text-slate-500">{{ r.duration or '—' }}</td>
-        <td><a class="text-blue-700 hover:underline font-mono text-xs"
-               href="/runs/{{ r.id }}">{{ r.id[:12] }}…</a></td>
       </tr>
       {% else %}
       <tr><td colspan="5" class="py-4 text-slate-500">No runs yet.</td></tr>

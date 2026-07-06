@@ -69,7 +69,6 @@
     <button id="btn-save-run" onclick="saveTest(true)"
       class="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-5 py-2 rounded font-medium">Save &amp; Run</button>
     <span id="save-status" class="text-sm text-slate-500"></span>
-    <a id="run-link" href="/" class="hidden text-sm text-blue-700 hover:underline ml-auto">View runs &rarr;</a>
   </div>
 </div>
 
@@ -385,9 +384,9 @@ async function saveTest(andRun) {
     if (andRun) {
       const rr = await fetch(`/api/tests/${payload.test.id}/run`, {method: 'POST'});
       if (!rr.ok) throw new Error((await rr.json()).detail || rr.statusText);
-      toast('Run started — progress shown in the top bar');
-      document.getElementById('run-link').classList.remove('hidden');
-      poll();
+      const runData = await rr.json();
+      location.href = `/runs/${runData.run_id}`;
+      return;
     }
   } catch (e) { toast(e.message, true); }
 }

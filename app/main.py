@@ -6,6 +6,9 @@ import re
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import urlparse
+from uuid import uuid4
 
 import yaml
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -14,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .config import SECRET_KEYS, load_config
-from .db import HealingEvent, Notification, Run, Schedule, StepResult, init_db
+from .db import HealingEvent, Notification, Run, Schedule, StepResult, _now, init_db
 from .envcheck import check_environment
 from .notify import create_notification
 from .reports.builder import build_report
@@ -74,20 +77,38 @@ def _release(test_id: str) -> None:
     _slots.release()
 
 
+def _test_name_map() -> dict:
+    return {e["id"]: e["name"] for e in _test_index() if e["valid"]}
+
+
 def _live_snapshot() -> dict:
-    """Prune stale finished entries and return the multi-run status shape."""
+    """Prune stale finished entries and return the multi-run status shape.
+    Only currently-running entries are exposed as active runs (F-5); a
+    finished one surfaces exactly once via `last_finished` for the nav
+    ticker, instead of lingering in the active list."""
     now = time.monotonic()
     with _active_guard:
         for rid in [rid for rid, e in LIVE_RUNS.items()
                     if e["ended"] is not None
                     and now - e["ended"] > _FINISHED_TTL_SECONDS]:
             del LIVE_RUNS[rid]
-        runs = [{"run_id": rid, "test_id": e["test_id"], "done": e["done"],
-                 "total": e["total"], "status": e["status"],
-                 "last_step": e["last_step"]} for rid, e in LIVE_RUNS.items()]
+        entries = list(LIVE_RUNS.items())
         test_ids = sorted(_active_tests)
-    return {"active": sum(1 for r in runs if r["status"] == "running"),
-            "slots": MAX_RUNS, "runs": runs, "test_ids": test_ids}
+    test_names = _test_name_map() if entries else {}
+    runs = [{"run_id": rid, "test_id": e["test_id"],
+             "test_name": test_names.get(e["test_id"], e["test_id"]),
+             "done": e["done"], "total": e["total"], "status": e["status"],
+             "last_step": e["last_step"]}
+            for rid, e in entries if e["status"] == "running"]
+    finished = [e for _, e in entries if e["status"] != "running"]
+    last_finished = None
+    if finished:
+        latest = max(finished, key=lambda e: e["ended"] or 0)
+        last_finished = {"test_id": latest["test_id"],
+                         "test_name": test_names.get(latest["test_id"], latest["test_id"]),
+                         "status": latest["status"]}
+    return {"active": len(runs), "slots": MAX_RUNS, "runs": runs,
+            "test_ids": test_ids, "last_finished": last_finished}
 
 
 TEST_ID_RE = re.compile(r"^[a-z0-9-]+$")
@@ -132,8 +153,25 @@ def _test_file_for(test_id: str) -> Path | None:
     return None
 
 
+def _launch(test_def, test_file: Path, trigger: str = "manual",
+           schedule_id: str | None = None) -> str:
+    """Mints the run id and registers its live-progress entry synchronously
+    (so a caller can redirect the browser there immediately), then starts
+    the run in its own thread. The slot for test_def.test.id must already
+    be held (see _acquire)."""
+    run_id = uuid4().hex
+    entry = {"test_id": test_def.test.id, "done": 0, "total": len(test_def.test.steps),
+             "status": "running", "last_step": "", "ended": None}
+    with _active_guard:
+        LIVE_RUNS[run_id] = entry
+    threading.Thread(target=_execute,
+                     args=(test_def, test_file, run_id, trigger, schedule_id),
+                     daemon=True).start()
+    return run_id
+
+
 def _start_run(test_file: Path, trigger: str = "manual",
-               schedule_id: str | None = None) -> None:
+               schedule_id: str | None = None) -> str:
     try:
         test_def = load_test(test_file)
     except Exception as e:
@@ -142,9 +180,7 @@ def _start_run(test_file: Path, trigger: str = "manual",
         _acquire(test_def.test.id)
     except _Busy as e:
         raise HTTPException(409, str(e))
-    threading.Thread(target=_execute,
-                     args=(test_def, test_file, trigger, schedule_id),
-                     daemon=True).start()
+    return _launch(test_def, test_file, trigger, schedule_id)
 
 
 def _fire_scheduled(test_file: Path, schedule_id: str) -> None:
@@ -154,25 +190,16 @@ def _fire_scheduled(test_file: Path, schedule_id: str) -> None:
         _acquire(test_def.test.id)
     except _Busy as e:
         raise BusyError(e.past)
-    threading.Thread(target=_execute,
-                     args=(test_def, test_file, "scheduled", schedule_id),
-                     daemon=True).start()
+    _launch(test_def, test_file, "scheduled", schedule_id)
 
 
-def _execute(test_def, test_file: Path, trigger: str = "manual",
+def _execute(test_def, test_file: Path, run_id: str, trigger: str = "manual",
              schedule_id: str | None = None):
-    """Runs in its own thread; the slot for test_def.test.id is already held."""
+    """Runs in its own thread; the slot for test_def.test.id and the
+    LIVE_RUNS[run_id] entry are already registered by _launch."""
     test_id = test_def.test.id
     cfg = load_config(CONFIG_PATH)
-    entry = {"test_id": test_id, "done": 0, "total": len(test_def.test.steps),
-             "status": "running", "last_step": "", "ended": None}
-    registered = False
-
-    def on_start(run_id):
-        nonlocal registered
-        with _active_guard:
-            LIVE_RUNS[run_id] = entry
-        registered = True
+    entry = LIVE_RUNS[run_id]
 
     def on_step(result, total):
         entry.update(done=result.index + 1, total=total,
@@ -181,8 +208,8 @@ def _execute(test_def, test_file: Path, trigger: str = "manual",
     outcome = None
     try:
         outcome = run_test(test_def, cfg, session_factory, REPORTS_DIR,
-                           on_start=on_start, on_step=on_step,
-                           trigger=trigger, schedule_id=schedule_id)
+                           on_step=on_step, trigger=trigger, schedule_id=schedule_id,
+                           run_id=run_id)
         if any(s.status == "healed_then_passed" for s in outcome.steps):
             save_test(test_def, test_file)  # selector write-back (F-5)
         build_report(outcome.run_id, session_factory, REPORTS_DIR)
@@ -191,9 +218,6 @@ def _execute(test_def, test_file: Path, trigger: str = "manual",
         entry.update(status="error", last_step=str(e))
     finally:
         entry["ended"] = time.monotonic()
-        if not registered:  # crashed before a Run row existed; still show it
-            with _active_guard:
-                LIVE_RUNS[f"unstarted-{test_id}"] = entry
         _release(test_id)
     if trigger == "scheduled" and schedule_id:
         _after_scheduled_run(cfg, test_id, schedule_id, outcome)
@@ -231,8 +255,11 @@ scheduler.start()
 def dashboard(request: Request):
     with session_factory() as db:
         runs = db.query(Run).order_by(Run.started_at.desc()).limit(10).all()
+    tests = _test_index()
+    test_names = {e["id"]: e["name"] for e in tests if e["valid"]}
     return templates.TemplateResponse(request, "dashboard.html", {
-        "runs": _with_duration(runs), "tests": _test_index(), "live": _live_snapshot()})
+        "runs": _with_duration(runs), "tests": tests, "live": _live_snapshot(),
+        "test_names": test_names})
 
 
 @app.post("/run")
@@ -263,7 +290,7 @@ def runs_index(request: Request):
             db.query(Run).order_by(Run.started_at.desc()).limit(20).all())
         total = db.query(Run).count()
     return templates.TemplateResponse(request, "runs_list.html", {
-        "runs": runs, "runs_total": total})
+        "runs": runs, "runs_total": total, "test_names": _test_name_map()})
 
 
 @app.get("/api/runs")
@@ -273,8 +300,10 @@ def api_runs(offset: int = 0, limit: int = 20):
             db.query(Run).order_by(Run.started_at.desc())
             .offset(max(0, offset)).limit(max(1, min(limit, 50))).all())
         total = db.query(Run).count()
+    test_names = _test_name_map()
     return JSONResponse({"total": total, "runs": [
-        {"id": r.id, "test_id": r.test_id, "status": r.status, "duration": r.duration,
+        {"id": r.id, "test_id": r.test_id, "test_name": test_names.get(r.test_id, r.test_id),
+         "test_exists": r.test_id in test_names, "status": r.status, "duration": r.duration,
          "trigger": r.trigger,
          "started_at": r.started_at.strftime("%Y-%m-%d %H:%M:%S")} for r in runs]})
 
@@ -328,15 +357,29 @@ def _test_info_for_run(run: Run) -> dict | None:
             "defaults": test.defaults.model_dump()}
 
 
-@app.get("/runs/{run_id}", response_class=HTMLResponse)
-def run_detail(request: Request, run_id: str):
+def _run_page_context(run_id: str) -> dict | None:
+    """Shared by the full run page and its live fragment. None => unknown run."""
     with session_factory() as db:
         run = db.get(Run, run_id)
-        if not run:
-            raise HTTPException(404)
-        steps = (db.query(StepResult).filter_by(run_id=run_id)
-                 .order_by(StepResult.step_index).all())
-        healings = db.query(HealingEvent).filter_by(run_id=run_id).all()
+        steps, healings = [], []
+        if run:
+            steps = (db.query(StepResult).filter_by(run_id=run_id)
+                     .order_by(StepResult.step_index).all())
+            healings = db.query(HealingEvent).filter_by(run_id=run_id).all()
+    if not run:
+        # The browser can arrive before the worker thread's first commit
+        # (F-1: redirect happens as soon as the run id is minted). Render a
+        # pending page from the live entry instead of 404ing; the live-update
+        # poll (F-2) fills it in once the Run row exists.
+        with _active_guard:
+            live = LIVE_RUNS.get(run_id)
+        if not live:
+            return None
+        run = SimpleNamespace(
+            id=run_id, test_id=live["test_id"], status=live["status"],
+            started_at=_now(), finished_at=None, duration=None,
+            trigger="manual", schedule_id=None, skip_reason=None,
+            error=None, error_summary=None, test_snapshot=None)
     for s in steps:
         s.shot_url = (f"/artifacts/{run_id}/screenshots/{Path(s.screenshot_path).name}"
                       if s.screenshot_path else None)
@@ -348,9 +391,45 @@ def run_detail(request: Request, run_id: str):
         s.log_entries = _parse_log(s.log)
     has_report = (REPORTS_DIR / run_id / "report.html").exists()
     _with_duration([run])
-    return templates.TemplateResponse(request, "run_detail.html", {
-        "run": run, "steps": steps, "healings": healings, "has_report": has_report,
-        "test_info": _test_info_for_run(run)})
+    return {"run": run, "steps": steps, "healings": healings, "has_report": has_report,
+            "test_info": _test_info_for_run(run)}
+
+
+@app.get("/runs/{run_id}", response_class=HTMLResponse)
+def run_detail(request: Request, run_id: str):
+    ctx = _run_page_context(run_id)
+    if ctx is None:
+        raise HTTPException(404)
+    return templates.TemplateResponse(request, "run_detail.html", ctx)
+
+
+@app.get("/runs/{run_id}/fragment", response_class=HTMLResponse)
+def run_detail_fragment(request: Request, run_id: str):
+    """Server-rendered run body, refetched by the live-update poll (F-2)."""
+    ctx = _run_page_context(run_id)
+    if ctx is None:
+        raise HTTPException(404)
+    return templates.TemplateResponse(request, "run_detail_body.html", ctx)
+
+
+@app.get("/api/runs/{run_id}/live")
+def api_run_live(run_id: str):
+    """Cheap poll target: lets the run page know when to refetch the
+    fragment, without re-rendering it on every tick."""
+    with session_factory() as db:
+        run = db.get(Run, run_id)
+        steps_rendered = db.query(StepResult).filter_by(run_id=run_id).count()
+        healings = db.query(HealingEvent).filter_by(run_id=run_id).count()
+    if run:
+        status = run.status
+    else:
+        with _active_guard:
+            live = LIVE_RUNS.get(run_id)
+        if not live:
+            raise HTTPException(404)
+        status = live["status"]
+    return JSONResponse({"status": status, "steps_rendered": steps_rendered,
+                         "healings": healings})
 
 
 # ---- Test management pages ----
@@ -501,8 +580,8 @@ def api_run_test(test_id: str):
     path = _test_file_for(test_id)
     if not path:
         raise HTTPException(404, f"unknown test '{test_id}'")
-    _start_run(path)
-    return {"started": test_id}
+    run_id = _start_run(path)
+    return {"started": test_id, "run_id": run_id}
 
 
 # ---- Scheduling ----
@@ -758,13 +837,57 @@ def show_test(request: Request, name: str):
         "live": _live_snapshot()})
 
 
+# ---- Config page (spec: docs/spec-run-ux-improvements.md F-6) ----
+# The structured form patches individual settings.yaml lines/blocks so
+# comments and formatting the user left in the file survive; a full
+# rewrite is reserved for the Advanced raw-YAML editor below.
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _yaml_scalar(value) -> str:
+    """A YAML-safe rendering of a single scalar for a patched `key: value` line."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    return json.dumps(str(value))  # double-quoted flow scalar; valid YAML
+
+
+def _patch_yaml_scalar(text: str, key: str, value: str) -> str:
+    """Replace a top-level `key: ...` line; append one if it's missing."""
+    line = f"{key}: {value}"
+    new, n = re.subn(rf"(?m)^{re.escape(key)}:.*$", line, text)
+    if n == 0:
+        new = text.rstrip("\n") + f"\n{line}\n"
+    return new
+
+
+def _patch_yaml_nested(text: str, parent: str, key: str, value: str) -> str:
+    """Replace an indented `key: ...` line inside a top-level `parent:`
+    block; append one to the block (or create the block) if missing."""
+    line = f"  {key}: {value}"
+    block_re = re.compile(rf"(?m)^{re.escape(parent)}:\n((?:[ \t]+.*\n?)*)")
+    m = block_re.search(text)
+    if not m:
+        return text.rstrip("\n") + f"\n\n{parent}:\n{line}\n"
+    block = m.group(1)
+    new_block, n = re.subn(rf"(?m)^\s*{re.escape(key)}:.*$", line, block)
+    if n == 0:
+        new_block = block.rstrip("\n") + f"\n{line}\n"
+    return text[:m.start(1)] + new_block + text[m.end(1):]
+
+
 @app.get("/config", response_class=HTMLResponse)
 def edit_config(request: Request):
     cfg = load_config(CONFIG_PATH)
     masked = {k: ("***" if k in SECRET_KEYS and v else v) for k, v in cfg.items()}
     return templates.TemplateResponse(request, "config.html", {
         "masked": yaml.safe_dump(masked, sort_keys=False),
-        "content": CONFIG_PATH.read_text(encoding="utf-8"), "error": None})
+        "content": CONFIG_PATH.read_text(encoding="utf-8"), "error": None,
+        "cfg": cfg, "ollama": cfg.get("ollama") or {},
+        "admin_password_set": bool(cfg.get("admin_password")),
+        "env": check_environment(cfg)})
 
 
 @app.post("/config", response_class=HTMLResponse)
@@ -781,7 +904,76 @@ def save_config(request: Request, content: str = Form(...)):
     masked = {k: ("***" if k in SECRET_KEYS and v else v) for k, v in cfg.items()}
     return templates.TemplateResponse(request, "config.html", {
         "masked": yaml.safe_dump(masked, sort_keys=False), "content": content,
-        "error": error})
+        "error": error, "cfg": cfg, "ollama": cfg.get("ollama") or {},
+        "admin_password_set": bool(cfg.get("admin_password")),
+        "env": check_environment(cfg)})
+
+
+@app.put("/api/config")
+def api_update_config(body: dict):
+    errors: dict[str, str] = {}
+
+    def _int(key: str, lo: int, hi: int):
+        try:
+            n = int(body[key])
+        except (KeyError, TypeError, ValueError):
+            errors[key] = "must be an integer"
+            return None
+        if not lo <= n <= hi:
+            errors[key] = f"must be between {lo} and {hi}"
+            return None
+        return n
+
+    starting_url = str(body.get("starting_url") or "").strip()
+    if starting_url:
+        parsed = urlparse(starting_url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            errors["starting_url"] = "must be a valid http:// or https:// URL"
+
+    max_concurrent_runs = _int("max_concurrent_runs", 1, 10)
+    num_ctx = _int("ollama_num_ctx", 1, 10_000_000)
+    purchases_per_run = _int("purchases_per_run", 1, 1000)
+
+    notify_email_to = str(body.get("notify_email_to") or "").strip()
+    if notify_email_to and not EMAIL_RE.match(notify_email_to):
+        errors["notify_email_to"] = "must be a valid email address"
+
+    if errors:
+        raise HTTPException(422, detail=errors)
+
+    text_ = CONFIG_PATH.read_text(encoding="utf-8")
+    if starting_url:
+        text_ = _patch_yaml_scalar(text_, "starting_url", _yaml_scalar(starting_url))
+    admin_user = str(body.get("admin_user") or "").strip()
+    if admin_user:
+        text_ = _patch_yaml_scalar(text_, "admin_user", _yaml_scalar(admin_user))
+    admin_password = str(body.get("admin_password") or "")
+    if admin_password:  # blank means "keep current value", never "clear"
+        text_ = _patch_yaml_scalar(text_, "admin_password", _yaml_scalar(admin_password))
+    product_id = str(body.get("product_id") or "").strip()
+    if product_id:
+        text_ = _patch_yaml_scalar(text_, "product_id", _yaml_scalar(product_id))
+    if purchases_per_run is not None:
+        text_ = _patch_yaml_scalar(text_, "purchases_per_run", _yaml_scalar(purchases_per_run))
+    if max_concurrent_runs is not None:
+        text_ = _patch_yaml_scalar(text_, "max_concurrent_runs", _yaml_scalar(max_concurrent_runs))
+    text_ = _patch_yaml_scalar(text_, "email_notifications",
+                               _yaml_scalar(bool(body.get("email_notifications"))))
+    if notify_email_to:
+        text_ = _patch_yaml_scalar(text_, "notify_email_to", _yaml_scalar(notify_email_to))
+    text_ = _patch_yaml_nested(text_, "ollama", "enabled",
+                               _yaml_scalar(bool(body.get("ollama_enabled"))))
+    ollama_url = str(body.get("ollama_url") or "").strip()
+    if ollama_url:
+        text_ = _patch_yaml_nested(text_, "ollama", "url", _yaml_scalar(ollama_url))
+    ollama_model = str(body.get("ollama_model") or "").strip()
+    if ollama_model:
+        text_ = _patch_yaml_nested(text_, "ollama", "model", _yaml_scalar(ollama_model))
+    if num_ctx is not None:
+        text_ = _patch_yaml_nested(text_, "ollama", "num_ctx", _yaml_scalar(num_ctx))
+
+    CONFIG_PATH.write_text(text_, encoding="utf-8")
+    return {"saved": True}
 
 
 def serve():  # console entrypoint (pyproject)

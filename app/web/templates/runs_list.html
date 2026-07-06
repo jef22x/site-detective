@@ -6,11 +6,14 @@
   <div class="overflow-x-auto">
   <table class="w-full text-sm">
     <thead><tr class="text-left text-slate-500 border-b">
-      <th class="py-2">Test</th><th>Status</th><th>Started</th><th>Duration</th><th>Run ID</th></tr></thead>
+      <th class="py-2">Run ID</th><th>Test</th><th>Status</th><th>Started</th><th>Duration</th></tr></thead>
     <tbody id="run-history">
       {% for r in runs %}
       <tr data-run="{{ r.id }}" class="border-b border-slate-100 hover:bg-slate-50">
-        <td class="py-2">{{ r.test_id }}
+        <td class="py-2"><a class="text-blue-700 hover:underline font-mono text-xs"
+               href="/runs/{{ r.id }}">{{ r.id[:12] }}…</a></td>
+        <td>{% if r.test_id in test_names %}<a class="text-blue-700 hover:underline" href="/tests/{{ r.test_id }}">{{ test_names[r.test_id] }}</a>
+            {% else %}{{ r.test_id }}{% endif %}
           {% if r.trigger == 'scheduled' %}<span title="Started by a schedule">🕐</span>{% endif %}</td>
         <td><span class="px-2 py-0.5 rounded-full text-white text-xs
           {% if r.status == 'passed' %}bg-green-600{% elif r.status == 'running' %}bg-blue-600
@@ -18,8 +21,6 @@
           {% else %}bg-red-600{% endif %}">{{ r.status }}</span></td>
         <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
         <td class="text-slate-500">{{ r.duration or '—' }}</td>
-        <td><a class="text-blue-700 hover:underline font-mono text-xs"
-               href="/runs/{{ r.id }}">{{ r.id[:12] }}…</a></td>
       </tr>
       {% else %}
       <tr><td colspan="5" class="py-4 text-slate-500">No runs yet.</td></tr>
@@ -57,17 +58,41 @@ async function loadMoreRuns() {
       const tr = document.createElement('tr');
       tr.dataset.run = run.id;
       tr.className = 'border-b border-slate-100 hover:bg-slate-50';
-      const badge = STATUS_BG[run.status] || 'bg-red-600';
-      tr.innerHTML =
-        `<td class="py-2"></td>` +
-        `<td><span class="px-2 py-0.5 rounded-full text-white text-xs ${badge}"></span></td>` +
-        `<td></td><td class="text-slate-500"></td>` +
-        `<td><a class="text-blue-700 hover:underline font-mono text-xs" href="/runs/${encodeURIComponent(run.id)}"></a></td>`;
-      tr.children[0].textContent = run.test_id + (run.trigger === 'scheduled' ? ' 🕐' : '');
-      tr.querySelector('span').textContent = run.status;
-      tr.children[2].textContent = run.started_at;
-      tr.children[3].textContent = run.duration || '—';
-      tr.querySelector('a').textContent = run.id.slice(0, 12) + '…';
+
+      const runIdTd = document.createElement('td');
+      runIdTd.className = 'py-2';
+      const runLink = document.createElement('a');
+      runLink.className = 'text-blue-700 hover:underline font-mono text-xs';
+      runLink.href = `/runs/${encodeURIComponent(run.id)}`;
+      runLink.textContent = run.id.slice(0, 12) + '…';
+      runIdTd.appendChild(runLink);
+
+      const testTd = document.createElement('td');
+      if (run.test_exists) {
+        const testLink = document.createElement('a');
+        testLink.className = 'text-blue-700 hover:underline';
+        testLink.href = `/tests/${encodeURIComponent(run.test_id)}`;
+        testLink.textContent = run.test_name;
+        testTd.appendChild(testLink);
+      } else {
+        testTd.appendChild(document.createTextNode(run.test_name));
+      }
+      if (run.trigger === 'scheduled') testTd.appendChild(document.createTextNode(' 🕐'));
+
+      const statusTd = document.createElement('td');
+      const badge = document.createElement('span');
+      badge.className = `px-2 py-0.5 rounded-full text-white text-xs ${STATUS_BG[run.status] || 'bg-red-600'}`;
+      badge.textContent = run.status;
+      statusTd.appendChild(badge);
+
+      const startedTd = document.createElement('td');
+      startedTd.textContent = run.started_at;
+
+      const durationTd = document.createElement('td');
+      durationTd.className = 'text-slate-500';
+      durationTd.textContent = run.duration || '—';
+
+      tr.append(runIdTd, testTd, statusTd, startedTd, durationTd);
       tbody.appendChild(tr);
     }
     const shown = tbody.querySelectorAll('tr[data-run]').length;
