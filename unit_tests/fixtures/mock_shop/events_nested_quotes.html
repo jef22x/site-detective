@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html><head><title>Mock Events (nested-quote intents)</title></head>
+<body>
+  <!-- Tier 1 nested-quote regression: both cards share the "POP-UP WEBINAR | "
+       prefix and the " with Dr. Rocky Ruggiero" suffix, so the pairwise quoted
+       fragments of a nested-quote intent match ambiguously; only the full
+       first-quote-to-last-quote span singles one card out, and only the href
+       selector candidate is unique (the classes are shared). -->
+  <div class="event-card">
+    <a class="event-link" href="/event/bernini-in-boston/">POP-UP WEBINAR | "Bernini in Boston" with Dr. Rocky Ruggiero</a>
+  </div>
+  <div class="event-card">
+    <a class="event-link" href="/event/caravaggio-in-charlotte/">POP-UP WEBINAR | "Caravaggio in Charlotte" with Dr. Rocky Ruggiero</a>
+  </div>
+</body></html>

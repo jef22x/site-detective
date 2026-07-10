@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html><head><title>Mock Diagnostics Page</title></head>
+<body>
+  <!-- Deliberately noisy page for exercising PageDiagnostics: a console
+       error, a broken image, and a failed XHR. -->
+  <h1 class="page_title">Diagnostics fixture</h1>
+  <img src="does-not-exist.png" alt="broken">
+  <script>
+    console.error("Uncaught TypeError: boom");
+    fetch("does-not-exist.json").catch(() => {});
+  </script>
+</body></html>

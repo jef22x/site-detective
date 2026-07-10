@@ -13,7 +13,7 @@ import smtplib
 import urllib.request
 from datetime import timedelta
 from email.message import EmailMessage
-from typing import Any, Dict
+from typing import Any
 
 from .db import Notification, _now
 from .logging_utils import log_error
@@ -22,7 +22,7 @@ PRUNE_READ_AFTER_DAYS = 90
 PRUNE_ANY_AFTER_DAYS = 365
 
 
-def create_notification(session_factory, cfg: Dict[str, Any], *, kind: str,
+def create_notification(session_factory, cfg: dict[str, Any], *, kind: str,
                         severity: str, title: str, body: str = "",
                         run_id: str | None = None,
                         schedule_id: str | None = None) -> str:
@@ -47,7 +47,7 @@ def create_notification(session_factory, cfg: Dict[str, Any], *, kind: str,
         return n.id
 
 
-def _send_email(cfg: Dict[str, Any], title: str, body: str) -> str | None:
+def _send_email(cfg: dict[str, Any], title: str, body: str) -> str | None:
     host = cfg.get("smtp_host")
     to = cfg.get("notify_email_to")
     if not host or not to:
@@ -75,7 +75,7 @@ def _send_email(cfg: Dict[str, Any], title: str, body: str) -> str | None:
         return f"{type(e).__name__}: {e}"
 
 
-def _send_webhook(cfg: Dict[str, Any], kind: str, severity: str, title: str,
+def _send_webhook(cfg: dict[str, Any], kind: str, severity: str, title: str,
                   body: str, run_id: str | None) -> str | None:
     url = cfg.get("notify_webhook_url")
     payload = {

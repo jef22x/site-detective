@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html><head><title>Mock Events (duplicate same-href links)</title>
+<style>
+  .card { position: relative; width: 320px; height: 120px; border: 1px solid #ccc; margin: 12px; }
+  .overlay-link { position: absolute; inset: 0; z-index: 2; }
+</style></head>
+<body>
+  <!-- The same event listed in two page sections (upcoming list + shop
+       grid), each rendering THREE anchors to one URL: an image link that
+       sits UNDER the stretched overlay link (clicking it is intercepted),
+       the overlay itself, and a button. Mirrors the Breakdance card layout
+       that produced 6 same-href matches in production: a[href="…"] is the
+       right selector even though it is not unique, and the first DOM match
+       is not clickable. -->
+  <div class="card">
+    <a class="img-link" href="/event/caravaggio-in-charlotte/"><img alt="" width="60" height="60"></a>
+    <a class="overlay-link" href="/event/caravaggio-in-charlotte/"></a>
+    <a class="btn-link" href="/event/caravaggio-in-charlotte/">Learn more</a>
+  </div>
+  <div class="card">
+    <a class="img-link" href="/event/caravaggio-in-charlotte/"><img alt="" width="60" height="60"></a>
+    <a class="overlay-link" href="/event/caravaggio-in-charlotte/"></a>
+    <a class="btn-link" href="/event/caravaggio-in-charlotte/">POP-UP WEBINAR | "Caravaggio in Charlotte" with Dr. Rocky Ruggiero</a>
+  </div>
+</body></html>

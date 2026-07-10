@@ -1,12 +1,13 @@
 {% extends "base.html" %}
+{% import "_components.html" as c %}
+{% block header %}{% if error %}{{ file }}{% else %}{{ td.test.name or td.test.id }}{% endif %}{% endblock %}
 {% block content %}
 {% if error %}
-<div class="flex items-center justify-between mb-4">
-  <h1 class="text-xl font-bold">{{ file }}</h1>
-  <a href="/tests" class="text-slate-500 hover:underline">&larr; Back to tests</a>
+<div class="mb-4 flex justify-end">
+  <a href="/tests" class="{{ c.muted() }} hover:underline">&larr; Back to tests</a>
 </div>
-<div class="bg-red-50 border border-red-300 text-red-700 rounded p-3 mb-3 text-sm whitespace-pre-wrap">This test file could not be parsed: {{ error }}</div>
-<pre class="bg-white border border-slate-200 rounded-lg p-4 text-sm font-mono overflow-x-auto">{{ raw }}</pre>
+<div class="mb-3 rounded-xl bg-danger-50 p-4 text-sm whitespace-pre-wrap text-danger-700 ring-1 ring-danger-600/20 dark:bg-danger-400/10 dark:text-danger-400 dark:ring-danger-400/30">This test file could not be parsed: {{ error }}</div>
+<pre class="{{ c.section_cls() }} overflow-x-auto p-4 font-mono text-sm">{{ raw }}</pre>
 {% else %}
 {% set t = td.test %}
 {% set type_labels = {
@@ -14,58 +15,54 @@
   'select': 'Select dropdown option', 'wait': 'Wait for condition',
   'assert_element': 'Check element', 'screenshot': 'Take screenshot', 'login': 'Log in'} %}
 
-<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
-  <div>
-    <h1 class="text-2xl font-bold">{{ t.name or t.id }}</h1>
-    <p class="text-sm text-slate-500 mt-1">
-      <span class="font-mono bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">{{ t.id }}</span>
-      <span class="ml-2">{{ t.steps | length }} step{{ '' if t.steps | length == 1 else 's' }}</span>
-      <span class="ml-2 text-slate-400">file: {{ file }}</span>
-    </p>
-  </div>
+<div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+  <p class="text-sm {{ c.muted() }}">
+    <span class="rounded-md bg-gray-100 px-1.5 py-0.5 font-mono ring-1 ring-gray-950/5 dark:bg-white/5 dark:ring-white/10">{{ t.id }}</span>
+    <span class="ml-2">{{ t.steps | length }} step{{ '' if t.steps | length == 1 else 's' }}</span>
+    <span class="ml-2 text-gray-400 dark:text-gray-500">file: {{ file }}</span>
+  </p>
   <div class="flex items-center gap-3">
     <button onclick="runTest('{{ t.id }}')" {% if t.id in live.test_ids %}disabled{% endif %}
-      class="run-btn bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 py-2 rounded font-medium">Run</button>
-    <a href="/tests/{{ t.id }}/edit"
-      class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-medium">Edit</a>
-    <a href="/tests" class="text-slate-500 hover:underline">&larr; Back</a>
+      class="run-btn {{ c.btn_success() }}">Run</button>
+    <a href="/tests/{{ t.id }}/edit" class="{{ c.btn_primary() }}">Edit</a>
+    <a href="/tests" class="{{ c.muted() }} hover:underline">&larr; Back</a>
   </div>
 </div>
 
 {% if t.description %}
-<p class="text-slate-700 mb-4">{{ t.description }}</p>
+<p class="mb-4 {{ c.muted() }}">{{ t.description }}</p>
 {% endif %}
 
-<section class="bg-white rounded-lg border border-slate-200 p-4 mb-6">
-  <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">Defaults</h2>
+<section class="{{ c.section_cls() }} mb-6 p-6">
+  <h2 class="mb-2 text-base font-semibold">Defaults</h2>
   <div class="flex gap-8 text-sm">
-    <div><span class="text-slate-500">Timeout:</span> {{ t.defaults.timeout_ms }} ms</div>
-    <div><span class="text-slate-500">Retries:</span> {{ t.defaults.retries }}</div>
-    <div><span class="text-slate-500">Healing:</span>
-      {% if t.defaults.healing %}<span class="text-emerald-700">enabled</span>
-      {% else %}<span class="text-slate-500">disabled</span>{% endif %}</div>
+    <div><span class="{{ c.muted() }}">Timeout:</span> {{ t.defaults.timeout_ms }} ms</div>
+    <div><span class="{{ c.muted() }}">Retries:</span> {{ t.defaults.retries }}</div>
+    <div><span class="{{ c.muted() }}">Healing:</span>
+      {% if t.defaults.healing %}<span class="text-success-600 dark:text-success-400">enabled</span>
+      {% else %}<span class="{{ c.muted() }}">disabled</span>{% endif %}</div>
   </div>
 </section>
 
-<h2 class="font-semibold text-lg mb-2">Steps</h2>
+<h2 class="mb-2 text-base font-semibold">Steps</h2>
 <div class="space-y-2">
   {% for s in t.steps %}
-  <div class="bg-white border border-slate-200 rounded-lg px-4 py-3">
+  <div class="{{ c.section_cls() }} px-4 py-3">
     <div class="flex items-center gap-3">
-      <span class="text-slate-400 text-sm w-6 text-right">{{ loop.index }}.</span>
+      <span class="w-6 text-right font-mono text-sm text-gray-400 dark:text-gray-500">{{ loop.index }}.</span>
       <span class="font-medium">{{ type_labels.get(s.type, s.type) }}</span>
       {% if s.context != 'customer' %}
-      <span class="text-xs bg-purple-100 text-purple-800 border border-purple-200 rounded px-1.5 py-0.5">{{ s.context }}</span>
+      {{ c.badge(s.context, 'primary') }}
       {% endif %}
       {% if s.type == 'screenshot' and s.full_page %}
-      <span class="text-xs bg-slate-100 text-slate-600 border border-slate-200 rounded px-1.5 py-0.5">whole page</span>
+      {{ c.badge('whole page') }}
       {% endif %}
     </div>
-    {% if s.intent %}<p class="ml-9 mt-1 text-sm text-slate-700">{{ s.intent }}</p>{% endif %}
-    <div class="ml-9 mt-1 text-sm text-slate-500 space-y-0.5">
-      {% if s.url %}<div>URL: <span class="font-mono text-slate-700">{{ s.url }}</span></div>{% endif %}
-      {% if s.selector %}<div>Selector: <span class="font-mono text-slate-700">{{ s.selector }}</span></div>{% endif %}
-      {% if s.value is not none %}<div>Value: <span class="font-mono text-slate-700">{{ s.value }}</span></div>{% endif %}
+    {% if s.intent %}<p class="ml-9 mt-1 text-sm {{ c.muted() }}">{{ s.intent }}</p>{% endif %}
+    <div class="ml-9 mt-1 space-y-0.5 text-sm {{ c.muted() }}">
+      {% if s.url %}<div>URL: <span class="font-mono text-gray-950 dark:text-white">{{ s.url }}</span></div>{% endif %}
+      {% if s.selector %}<div>Selector: <span class="font-mono text-gray-950 dark:text-white">{{ s.selector }}</span></div>{% endif %}
+      {% if s.value is not none %}<div>Value: <span class="font-mono text-gray-950 dark:text-white">{{ s.value }}</span></div>{% endif %}
       {% if s.type == 'wait' %}<div>Condition: {{ s.condition }}</div>{% endif %}
       {% if s.type == 'assert_element' %}
       <div>Expectation: element should {{ 'exist' if s.exists else 'be absent' }}{% if s.text_contains %} and contain “{{ s.text_contains }}”{% endif %}</div>
@@ -78,66 +75,139 @@
   {% endfor %}
 </div>
 
-<section class="bg-white rounded-lg border border-slate-200 p-5 mt-6">
-  <div class="flex items-center justify-between mb-3">
-    <h2 class="font-semibold text-lg">Schedules</h2>
-    <a href="/schedules" class="text-blue-700 hover:underline text-sm">Manage schedules &rarr;</a>
+<section class="{{ c.section_cls() }} mt-6 p-6">
+  <div class="mb-3 flex items-center justify-between">
+    <h2 class="text-base font-semibold">Schedules</h2>
+    <a href="/schedules" class="{{ c.link_cls() }} text-sm">Manage schedules &rarr;</a>
   </div>
+  <div class="{{ c.divide_cls() }}">
   {% for s in schedules %}
-  <div class="flex items-center gap-4 py-1.5 border-b border-slate-100 text-sm {% if not s.enabled %}opacity-60{% endif %}">
-    <span>{{ s.cadence }}</span>
-    <span class="text-slate-500">next: {{ s.next_run_at or '—' }} UTC</span>
-    <span class="text-slate-500">last: {{ s.last_result or '—' }}</span>
-    <span class="ml-auto text-xs {% if s.enabled %}text-emerald-700{% else %}text-slate-400{% endif %}">
-      {{ 'enabled' if s.enabled else 'disabled' }}</span>
+  <div class="flex items-center gap-4 py-2 text-sm {% if not s.enabled %}opacity-60{% endif %}">
+    <span class="font-mono text-xs">{{ s.cadence }}</span>
+    <span class="{{ c.muted() }}">next: {{ s.next_run_at or '—' }} UTC</span>
+    <span class="{{ c.muted() }}">last: {{ s.last_result or '—' }}</span>
+    <span class="ml-auto">{% if s.enabled %}{{ c.badge('enabled', 'success') }}{% else %}{{ c.badge('disabled', 'gray') }}{% endif %}</span>
   </div>
   {% else %}
-  <p class="text-slate-500 text-sm">No schedules for this test.</p>
+  <p class="text-sm {{ c.muted() }}">No schedules for this test.</p>
   {% endfor %}
+  </div>
 </section>
 
-<section class="bg-white rounded-lg border border-slate-200 p-5 mt-6">
-  <h2 class="font-semibold text-lg mb-3">Run history</h2>
-  <div class="overflow-x-auto">
+{% if health and health.total %}
+{% set grade_tone = {'A': 'success', 'B': 'success', 'C': 'warning', 'D': 'warning', 'E': 'danger'} %}
+{% set grade_cls = {
+  'success': 'bg-success-50 text-success-700 ring-success-600/20 dark:bg-success-400/10 dark:text-success-400 dark:ring-success-400/30',
+  'warning': 'bg-warning-50 text-warning-700 ring-warning-600/20 dark:bg-warning-400/10 dark:text-warning-400 dark:ring-warning-400/30',
+  'danger': 'bg-danger-50 text-danger-700 ring-danger-600/20 dark:bg-danger-400/10 dark:text-danger-400 dark:ring-danger-400/30'} %}
+<section class="{{ c.section_cls() }} mt-6 p-6">
+  <div class="mb-3 flex items-center justify-between">
+    <h2 class="text-base font-semibold">Health <span class="text-sm font-normal {{ c.muted() }}">(last {{ health.total }} run{{ '' if health.total == 1 else 's' }})</span></h2>
+    <a href="/tests/{{ t.id }}/report" target="_blank" class="{{ c.link_cls() }} text-sm">Client report &rarr;</a>
+  </div>
+
+  <div class="mb-4 flex flex-wrap gap-4">
+    {% for key, label in [('reliability','Reliability'), ('errors','Errors'), ('speed','Speed'), ('weight','Weight'), ('accessibility','Accessibility')] %}
+    {% if health.grades.get(key) %}
+    <div class="flex items-center gap-2">
+      <span class="flex size-8 items-center justify-center rounded-full text-sm font-bold ring-1 ring-inset {{ grade_cls.get(grade_tone.get(health.grades[key]), grade_cls['warning']) }}">{{ health.grades[key] }}</span>
+      <span class="text-sm {{ c.muted() }}">{{ label }}</span>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+
+  {% if health.deltas %}
+  <div class="mb-4 space-y-1">
+    {% for d in health.deltas %}
+    <p class="text-sm {{ 'text-danger-600 dark:text-danger-400' if d.direction == 'up' else 'text-success-600 dark:text-success-400' }}">
+      {{ '⚠' if d.direction == 'up' else '✓' }} {{ d.label }} is {{ d.pct }}%
+      {{ 'slower' if d.direction == 'up' else 'faster' }} than its recent median
+      (last 3 runs)</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+    {% for key, label, unit in [('load_ms','Page load','ms'), ('weight_bytes','Page weight','MB'), ('duration_s','Run duration','s')] %}
+    {% if health.spark.get(key) %}
+    <div>
+      <p class="mb-1 text-xs font-medium {{ c.muted() }}">{{ label }}</p>
+      <svg viewBox="0 0 140 32" class="h-8 w-full" preserveAspectRatio="none">
+        <polyline points="{{ health.spark[key] }}" fill="none" stroke="currentColor"
+          stroke-width="2" class="text-primary-500"></polyline>
+      </svg>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+
+  {% if health.new_errors %}
+  <details class="mb-2" open>
+    <summary class="cursor-pointer text-xs {{ c.muted() }}">New errors this run ({{ health.new_errors | length }})</summary>
+    <ol class="mt-1 space-y-0.5 font-mono text-xs">
+      {% for e in health.new_errors %}<li class="break-all text-danger-600 dark:text-danger-400">{{ e }}</li>{% endfor %}
+    </ol>
+  </details>
+  {% endif %}
+  {% if health.recurring_errors %}
+  <details>
+    <summary class="cursor-pointer text-xs {{ c.muted() }}">Recurring errors ({{ health.recurring_errors | length }})</summary>
+    <ol class="mt-1 space-y-0.5 font-mono text-xs">
+      {% for e in health.recurring_errors %}<li class="break-all text-warning-600 dark:text-warning-400">{{ e }}</li>{% endfor %}
+    </ol>
+  </details>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="{{ c.section_cls() }} mt-6 overflow-hidden">
+  <h2 class="px-6 pt-6 text-base font-semibold">Run history</h2>
+  <div class="mt-4 overflow-x-auto">
   <table class="w-full text-sm">
-    <thead><tr class="text-left text-slate-500 border-b">
-      <th class="py-2">Run ID</th><th>Status</th><th>Started</th><th>Duration</th></tr></thead>
-    <tbody id="run-history">
+    <thead><tr class="border-b border-gray-200 dark:border-white/10">
+      <th class="{{ c.th_cls() }}">Run ID</th><th class="{{ c.th_cls() }}">Status</th>
+      <th class="{{ c.th_cls() }}">Started</th><th class="{{ c.th_cls() }}">Duration</th></tr></thead>
+    <tbody id="run-history" class="{{ c.divide_cls() }}">
       {% for r in runs %}
-      <tr data-run="{{ r.id }}" class="border-b border-slate-100 hover:bg-slate-50">
-        <td class="py-2"><a class="text-blue-700 hover:underline font-mono text-xs"
+      <tr data-run="{{ r.id }}" class="hover:bg-gray-50 dark:hover:bg-white/5">
+        <td class="px-4 py-3"><a class="{{ c.link_cls() }} font-mono text-xs"
                href="/runs/{{ r.id }}">{{ r.id[:12] }}…</a></td>
-        <td><span class="px-2 py-0.5 rounded-full text-white text-xs
-          {% if r.status == 'passed' %}bg-green-600{% elif r.status == 'running' %}bg-blue-600
-          {% elif r.status == 'skipped' %}bg-slate-500
-          {% else %}bg-red-600{% endif %}">{{ r.status }}</span>
+        <td class="px-4 py-3">{{ c.status_badge(r.status) }}
           {% if r.trigger == 'scheduled' %}<span title="Started by a schedule">🕐</span>{% endif %}</td>
-        <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-        <td class="text-slate-500">{{ r.duration or '—' }}</td>
+        <td class="px-4 py-3 font-mono text-xs">{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td class="px-4 py-3 font-mono text-xs {{ c.muted() }}">{{ r.duration or '—' }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="4" class="py-4 text-slate-500">No runs yet for this test.</td></tr>
+      <tr><td colspan="4" class="px-4 py-4 {{ c.muted() }}">No runs yet for this test.</td></tr>
       {% endfor %}
     </tbody>
   </table>
   </div>
   {% if runs_total > runs | length %}
   <button id="load-more" onclick="loadMoreRuns('{{ t.id }}')"
-    class="mt-3 text-blue-700 hover:underline text-sm">
+    class="{{ c.link_cls() }} px-6 py-3 text-sm">
     Load 10 more ({{ runs_total - runs | length }} remaining)</button>
   {% endif %}
 </section>
 
-<div id="toast" class="hidden fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded shadow-lg"></div>
+<div id="toast" class="hidden fixed bottom-6 right-6 {{ c.toast_ok() }}"></div>
 <script>
+const TOAST_OK = '{{ c.toast_ok() }}';
+const TOAST_ERR = '{{ c.toast_ok() }} text-danger-600 dark:text-danger-400';
 function toast(msg, isError) {
   const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'fixed bottom-6 right-6 text-white px-4 py-2 rounded shadow-lg ' +
-                 (isError ? 'bg-red-600' : 'bg-slate-900');
+  el.textContent = (isError ? '✕ ' : '✓ ') + msg;
+  el.className = 'fixed bottom-6 right-6 ' + (isError ? TOAST_ERR : TOAST_OK);
   setTimeout(() => el.classList.add('hidden'), 4000);
 }
-const STATUS_BG = {passed: 'bg-green-600', running: 'bg-blue-600'};
+const BADGE_BASE = 'inline-flex items-center whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ';
+const TONE_CLS = {
+  success: 'bg-success-50 text-success-700 ring-success-600/20 dark:bg-success-400/10 dark:text-success-400 dark:ring-success-400/30',
+  info: 'bg-info-50 text-info-700 ring-info-600/20 dark:bg-info-400/10 dark:text-info-400 dark:ring-info-400/30',
+  danger: 'bg-danger-50 text-danger-700 ring-danger-600/20 dark:bg-danger-400/10 dark:text-danger-400 dark:ring-danger-400/30',
+};
+const STATUS_TONE = {passed: 'success', running: 'info'};
 async function loadMoreRuns(testId) {
   const tbody = document.getElementById('run-history');
   const btn = document.getElementById('load-more');
@@ -150,27 +220,29 @@ async function loadMoreRuns(testId) {
     for (const run of data.runs) {
       const tr = document.createElement('tr');
       tr.dataset.run = run.id;
-      tr.className = 'border-b border-slate-100 hover:bg-slate-50';
+      tr.className = 'hover:bg-gray-50 dark:hover:bg-white/5';
 
       const runIdTd = document.createElement('td');
-      runIdTd.className = 'py-2';
+      runIdTd.className = 'px-4 py-3';
       const runLink = document.createElement('a');
-      runLink.className = 'text-blue-700 hover:underline font-mono text-xs';
+      runLink.className = 'font-medium text-primary-600 hover:underline dark:text-primary-400 font-mono text-xs';
       runLink.href = `/runs/${encodeURIComponent(run.id)}`;
       runLink.textContent = run.id.slice(0, 12) + '…';
       runIdTd.appendChild(runLink);
 
       const statusTd = document.createElement('td');
+      statusTd.className = 'px-4 py-3';
       const badge = document.createElement('span');
-      badge.className = `px-2 py-0.5 rounded-full text-white text-xs ${STATUS_BG[run.status] || 'bg-red-600'}`;
-      badge.textContent = run.status;
+      badge.className = BADGE_BASE + (TONE_CLS[STATUS_TONE[run.status]] || TONE_CLS.danger);
+      badge.textContent = run.status.replaceAll('_', ' ');
       statusTd.appendChild(badge);
 
       const startedTd = document.createElement('td');
+      startedTd.className = 'px-4 py-3 font-mono text-xs';
       startedTd.textContent = run.started_at;
 
       const durationTd = document.createElement('td');
-      durationTd.className = 'text-slate-500';
+      durationTd.className = 'px-4 py-3 font-mono text-xs text-gray-500 dark:text-gray-400';
       durationTd.textContent = run.duration || '—';
 
       tr.append(runIdTd, statusTd, startedTd, durationTd);

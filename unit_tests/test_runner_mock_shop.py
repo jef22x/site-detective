@@ -1,7 +1,7 @@
 """Integration test: full mock-shop purchase flow through the deterministic runner."""
 from pathlib import Path
 
-from app.db import init_db, Run, StepResult
+from app.db import Run, StepResult, init_db
 from app.runner.executor import run_test
 from app.schemas import load_test
 

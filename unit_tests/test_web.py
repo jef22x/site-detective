@@ -1,13 +1,14 @@
 """Phase 2: web UI routes."""
+import json
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
 import app.main as main_mod
-from app.db import HealingEvent, Run, StepResult, init_db
+from app.db import HealingEvent, Run, Schedule, StepResult, init_db
 from app.main import app
 
 client = TestClient(app)
@@ -128,6 +129,71 @@ def test_run_live_endpoint_unknown_404s():
     assert client.get("/api/runs/does-not-exist/live").status_code == 404
 
 
+# ---- Full-detail run JSON (machine-readable run page) ----
+
+def test_api_run_detail_returns_full_run_document():
+    with main_mod.session_factory() as db:
+        run = Run(test_id="mock-shop-purchase", status="failed",
+                  error_summary="Step #0 failed")
+        db.add(run)
+        db.commit()
+        run_id = run.id
+        db.add(StepResult(
+            run_id=run_id, step_index=0, step_type="click", status="failed",
+            duration_ms=343451, selector='a[href="caravaggio"]',
+            error="Could not find 'a[href=\"caravaggio\"]' on the page",
+            error_detail="playwright TimeoutError",
+            definition=json.dumps({"type": "click",
+                                   "intent": 'the "Caravaggio" link'}),
+            log=json.dumps([{"t": 120212, "kind": "healing",
+                             "msg": "Tier 1 (intent-text): trying candidates"}]),
+            screenshot_path="shots/step_000.png"))
+        db.add(HealingEvent(run_id=run_id, step_index=0,
+                            old_selector='a[href="caravaggio"]',
+                            proposed_selector=None, accepted=False, model="m"))
+        db.commit()
+
+    r = client.get(f"/api/runs/{run_id}")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["id"] == run_id
+    assert data["test_id"] == "mock-shop-purchase"
+    assert data["status"] == "failed"
+    assert data["error_summary"] == "Step #0 failed"
+    assert data["test"] is not None  # header snapshot or current test file
+
+    step = data["steps"][0]
+    assert step["index"] == 0
+    assert step["type"] == "click"
+    assert step["intent"] == 'the "Caravaggio" link'
+    assert step["selector"] == 'a[href="caravaggio"]'
+    assert step["status"] == "failed"
+    assert step["duration_ms"] == 343451
+    assert step["error_detail"] == "playwright TimeoutError"
+    assert step["log"] == [{"t": 120212, "kind": "healing",
+                            "msg": "Tier 1 (intent-text): trying candidates"}]
+    assert step["screenshot_url"] == f"/artifacts/{run_id}/screenshots/step_000.png"
+
+    heal = data["healings"][0]
+    assert heal["step_index"] == 0
+    assert heal["old_selector"] == 'a[href="caravaggio"]'
+    assert heal["proposed_selector"] is None
+    assert heal["accepted"] is False
+
+
+def test_api_run_detail_minimal_run_has_stable_shape():
+    run_id = _make_run()
+    data = client.get(f"/api/runs/{run_id}").json()
+    step = data["steps"][0]
+    assert step["intent"] is None and step["log"] == []
+    assert data["healings"] == [] and data["diagnostics"] is None
+    assert data["report_url"] is None
+
+
+def test_api_run_detail_unknown_404s():
+    assert client.get("/api/runs/does-not-exist").status_code == 404
+
+
 def test_run_fragment_renders_steps_and_healing_trail():
     run_id = _make_run(with_healing=True)
     r = client.get(f"/runs/{run_id}/fragment")
@@ -192,7 +258,7 @@ def _future_time(offset_seconds):
     # A fixed anchor far in the future (tests must not call datetime.now())
     # guarantees these synthetic rows sort as the newest, regardless of what
     # other tests in this module have already inserted with real timestamps.
-    return datetime(2099, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=offset_seconds)
+    return datetime(2099, 1, 1, tzinfo=UTC) + timedelta(seconds=offset_seconds)
 
 
 def _make_run_at(test_id, when, status="passed"):
@@ -285,7 +351,7 @@ def test_config_put_rejects_out_of_range_values():
         "ollama_num_ctx": 4096, "email_notifications": False, "notify_email_to": "",
     })
     assert r.status_code == 422
-    assert "max_concurrent_runs" in r.json()["detail"]
+    assert "max_concurrent_runs" in str(r.json()["detail"])
 
 
 def test_config_put_rejects_bad_email():
@@ -296,10 +362,47 @@ def test_config_put_rejects_bad_email():
         "ollama_num_ctx": 4096, "email_notifications": True, "notify_email_to": "not-an-email",
     })
     assert r.status_code == 422
-    assert "notify_email_to" in r.json()["detail"]
+    assert "notify_email_to" in str(r.json()["detail"])
 
 
 def test_config_raw_editor_unaffected_by_structured_form():
     r = client.get("/config")
     assert r.status_code == 200
     assert "Save raw YAML" in r.text
+
+
+# ---- F-1: typed request models (docs/spec-code-quality-hardening.md) ----
+
+def test_schedule_create_rejects_out_of_range_interval():
+    r = client.post("/api/schedules", json={
+        "kind": "interval", "every_minutes": 4, "test_id": "mock-shop-purchase"})
+    assert r.status_code == 422
+    assert "every_minutes must be between 5 and 10080" in str(r.json()["detail"])
+
+
+def test_schedule_create_unknown_test_is_404():
+    r = client.post("/api/schedules", json={
+        "kind": "interval", "every_minutes": 30, "test_id": "no-such-test"})
+    assert r.status_code == 404
+
+
+def test_schedule_update_without_test_id_keeps_existing_test():
+    with main_mod.session_factory() as db:
+        s = Schedule(kind="interval", every_minutes=30, test_id="mock-shop-purchase")
+        db.add(s)
+        db.commit()
+        sid = s.id
+    try:
+        r = client.put(f"/api/schedules/{sid}", json={"kind": "daily", "at_time": "09:30"})
+        assert r.status_code == 200
+        assert r.json()["test_id"] == "mock-shop-purchase"
+    finally:
+        with main_mod.session_factory() as db:
+            db.delete(db.get(Schedule, sid))
+            db.commit()
+
+
+def test_schedule_preview_requires_no_test_id():
+    r = client.post("/api/schedules/preview", json={"kind": "interval", "every_minutes": 30})
+    assert r.status_code == 200
+    assert len(r.json()["firings"]) == 3

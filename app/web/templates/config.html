@@ -1,94 +1,94 @@
 {% extends "base.html" %}
+{% import "_components.html" as c %}
+{% block header %}Configuration{% endblock %}
 {% block content %}
-<h1 class="text-xl font-bold mb-4">Configuration</h1>
-
 <div class="max-w-3xl space-y-6">
-  <section class="bg-white rounded-lg border border-slate-200 p-5">
-    <h2 class="font-semibold text-lg mb-3">Site under test</h2>
+  <section class="{{ c.section_cls() }} p-6">
+    <h2 class="mb-4 text-base font-semibold">Site under test</h2>
     <div class="grid gap-4 sm:grid-cols-2">
       <div class="sm:col-span-2">
-        <label class="block text-sm font-medium mb-1">Starting URL</label>
+        <label class="{{ c.label_cls() }} mb-1">Starting URL</label>
         <input id="c-starting-url" type="url" value="{{ cfg.starting_url or '' }}"
           placeholder="https://example.com"
-          class="w-full border border-slate-300 rounded px-3 py-2">
-        <p class="text-xs text-slate-500 mt-1">The site your tests run against; every run opens this first.</p>
-        <p class="err text-xs text-red-600 mt-1 hidden" data-err="starting_url"></p>
+          class="{{ c.input_cls() }} w-full">
+        <p class="mt-1 text-sm {{ c.muted() }}">The site your tests run against; every run opens this first.</p>
+        <p class="err mt-1 hidden text-sm text-danger-600 dark:text-danger-400" data-err="starting_url"></p>
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1">Admin user</label>
+        <label class="{{ c.label_cls() }} mb-1">Admin user</label>
         <input id="c-admin-user" type="text" value="{{ cfg.admin_user or '' }}"
-          class="w-full border border-slate-300 rounded px-3 py-2">
+          class="{{ c.input_cls() }} w-full">
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1">Admin password</label>
+        <label class="{{ c.label_cls() }} mb-1">Admin password</label>
         <input id="c-admin-password" type="password"
           placeholder="{{ 'Leave blank to keep current value' if admin_password_set else 'Not set' }}"
-          class="w-full border border-slate-300 rounded px-3 py-2">
+          class="{{ c.input_cls() }} w-full">
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1">Product ID</label>
+        <label class="{{ c.label_cls() }} mb-1">Product ID</label>
         <input id="c-product-id" type="text" value="{{ cfg.product_id or '' }}"
-          class="w-full border border-slate-300 rounded px-3 py-2">
+          class="{{ c.input_cls() }} w-full">
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1">Purchases per run</label>
+        <label class="{{ c.label_cls() }} mb-1">Purchases per run</label>
         <input id="c-purchases-per-run" type="number" min="1" value="{{ cfg.purchases_per_run or 1 }}"
-          class="w-full border border-slate-300 rounded px-3 py-2">
-        <p class="err text-xs text-red-600 mt-1 hidden" data-err="purchases_per_run"></p>
+          class="{{ c.input_cls() }} w-full">
+        <p class="err mt-1 hidden text-sm text-danger-600 dark:text-danger-400" data-err="purchases_per_run"></p>
       </div>
     </div>
   </section>
 
-  <section class="bg-white rounded-lg border border-slate-200 p-5">
-    <h2 class="font-semibold text-lg mb-3">Runs</h2>
-    <label class="block text-sm font-medium mb-1">Max concurrent runs</label>
+  <section class="{{ c.section_cls() }} p-6">
+    <h2 class="mb-4 text-base font-semibold">Runs</h2>
+    <label class="{{ c.label_cls() }} mb-1">Max concurrent runs</label>
     <input id="c-max-concurrent-runs" type="number" min="1" max="10" value="{{ cfg.max_concurrent_runs }}"
-      class="w-40 border border-slate-300 rounded px-3 py-2">
-    <p class="text-xs text-slate-500 mt-1">1–10 tests may run at the same time. Changing this needs a restart to take effect.</p>
-    <p class="err text-xs text-red-600 mt-1 hidden" data-err="max_concurrent_runs"></p>
+      class="{{ c.input_cls() }} w-40">
+    <p class="mt-1 text-sm {{ c.muted() }}">1–10 tests may run at the same time. Changing this needs a restart to take effect.</p>
+    <p class="err mt-1 hidden text-sm text-danger-600 dark:text-danger-400" data-err="max_concurrent_runs"></p>
   </section>
 
-  <section class="bg-white rounded-lg border border-slate-200 p-5">
-    <h2 class="font-semibold text-lg mb-3">Healing (Ollama)</h2>
-    <label class="inline-flex items-center gap-2 text-sm mb-3">
-      <input id="c-ollama-enabled" type="checkbox" {% if ollama.enabled %}checked{% endif %} class="w-4 h-4">
+  <section class="{{ c.section_cls() }} p-6">
+    <h2 class="mb-4 text-base font-semibold">Healing (Ollama)</h2>
+    <label class="mb-3 inline-flex items-center gap-2 text-sm">
+      <input id="c-ollama-enabled" type="checkbox" {% if ollama.enabled %}checked{% endif %} class="size-4 rounded accent-primary-600">
       Enabled
     </label>
     <div class="grid gap-4 sm:grid-cols-2">
       <div>
-        <label class="block text-sm font-medium mb-1">Ollama URL</label>
+        <label class="{{ c.label_cls() }} mb-1">Ollama URL</label>
         <input id="c-ollama-url" type="text" value="{{ ollama.url or '' }}"
-          class="w-full border border-slate-300 rounded px-3 py-2">
+          class="{{ c.input_cls() }} w-full">
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1">Model</label>
+        <label class="{{ c.label_cls() }} mb-1">Model</label>
         <input id="c-ollama-model" type="text" value="{{ ollama.model or '' }}"
-          class="w-full border border-slate-300 rounded px-3 py-2">
+          class="{{ c.input_cls() }} w-full">
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1">Context window (num_ctx)</label>
+        <label class="{{ c.label_cls() }} mb-1">Context window (num_ctx)</label>
         <input id="c-ollama-num-ctx" type="number" min="1" value="{{ ollama.num_ctx or 4096 }}"
-          class="w-full border border-slate-300 rounded px-3 py-2">
-        <p class="err text-xs text-red-600 mt-1 hidden" data-err="ollama_num_ctx"></p>
+          class="{{ c.input_cls() }} w-full">
+        <p class="err mt-1 hidden text-sm text-danger-600 dark:text-danger-400" data-err="ollama_num_ctx"></p>
       </div>
     </div>
-    <div id="ollama-status" class="text-sm text-slate-600 mt-3">Checking…</div>
+    <div id="ollama-status" class="mt-3 text-sm {{ c.muted() }}">Checking…</div>
   </section>
 
-  <section class="bg-white rounded-lg border border-slate-200 p-5">
-    <h2 class="font-semibold text-lg mb-3">Notifications</h2>
-    <label class="inline-flex items-center gap-2 text-sm mb-3">
-      <input id="c-email-notifications" type="checkbox" {% if cfg.email_notifications %}checked{% endif %} class="w-4 h-4">
+  <section class="{{ c.section_cls() }} p-6">
+    <h2 class="mb-4 text-base font-semibold">Notifications</h2>
+    <label class="mb-3 inline-flex items-center gap-2 text-sm">
+      <input id="c-email-notifications" type="checkbox" {% if cfg.email_notifications %}checked{% endif %} class="size-4 rounded accent-primary-600">
       Email notifications enabled
     </label>
     <div>
-      <label class="block text-sm font-medium mb-1">Notify email to</label>
+      <label class="{{ c.label_cls() }} mb-1">Notify email to</label>
       <input id="c-notify-email-to" type="email" value="{{ cfg.notify_email_to or '' }}"
         placeholder="you@example.com"
-        class="w-full border border-slate-300 rounded px-3 py-2">
-      <p class="err text-xs text-red-600 mt-1 hidden" data-err="notify_email_to"></p>
+        class="{{ c.input_cls() }} w-full">
+      <p class="err mt-1 hidden text-sm text-danger-600 dark:text-danger-400" data-err="notify_email_to"></p>
     </div>
-    <p class="text-xs text-slate-500 mt-2">
+    <p class="mt-2 text-sm {{ c.muted() }}">
       {% if env.smtp.configured %}
         {{ '✅' if env.smtp.ok else '❌' }} SMTP: <code>{{ env.smtp.host }}</code>{% if env.smtp.error %} — {{ env.smtp.error }}{% endif %}
       {% else %}
@@ -99,32 +99,33 @@
 
   <div class="flex items-center gap-3">
     <button id="btn-save" onclick="saveConfig()"
-      class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded font-medium">Save settings</button>
-    <span id="save-status" class="text-sm text-slate-500"></span>
+      class="{{ c.btn_primary() }}">Save settings</button>
+    <span id="save-status" class="text-sm {{ c.muted() }}"></span>
   </div>
 
-  <details class="bg-white rounded-lg border border-slate-200 p-5">
-    <summary class="font-semibold text-lg cursor-pointer select-none">Advanced: raw settings.yaml</summary>
+  <details class="{{ c.section_cls() }} p-6">
+    <summary class="cursor-pointer select-none text-base font-semibold">Advanced: raw settings.yaml</summary>
     {% if error %}
-    <div class="bg-red-50 border border-red-300 text-red-700 rounded p-3 my-3 text-sm whitespace-pre-wrap">{{ error }}</div>
+    <div class="my-3 whitespace-pre-wrap rounded-xl bg-danger-50 p-3 text-sm text-danger-700 ring-1 ring-danger-600/20 dark:bg-danger-400/10 dark:text-danger-400 dark:ring-danger-400/30">{{ error }}</div>
     {% endif %}
-    <p class="text-sm text-slate-500 mt-3 mb-2">For settings not covered above (e.g. Stripe keys). Secrets are masked below; edit the file directly to change them.</p>
-    <pre class="bg-slate-50 border border-slate-200 rounded p-3 text-sm mb-3">{{ masked }}</pre>
+    <p class="mb-2 mt-3 text-sm {{ c.muted() }}">For settings not covered above (e.g. Stripe keys). Secrets are masked below; edit the file directly to change them.</p>
+    <pre class="mb-3 overflow-x-auto rounded-lg bg-gray-50 p-3 text-sm ring-1 ring-gray-950/5 dark:bg-white/5 dark:ring-white/10">{{ masked }}</pre>
     <form method="post">
       <textarea name="content" rows="18" spellcheck="false"
-        class="w-full font-mono text-sm border border-slate-300 rounded p-3">{{ content }}</textarea>
-      <button class="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Save raw YAML</button>
+        class="{{ c.input_cls() }} w-full font-mono">{{ content }}</textarea>
+      <button class="{{ c.btn_primary() }} mt-3">Save raw YAML</button>
     </form>
   </details>
 </div>
 
-<div id="cfg-toast" class="hidden fixed bottom-6 right-6 text-white px-4 py-2 rounded shadow-lg"></div>
+<div id="cfg-toast" class="hidden fixed bottom-6 right-6 {{ c.toast_ok() }}"></div>
 <script>
+const TOAST_OK = '{{ c.toast_ok() }}';
+const TOAST_ERR = '{{ c.toast_ok() }} text-danger-600 dark:text-danger-400';
 function toast(msg, isError) {
   const el = document.getElementById('cfg-toast');
-  el.textContent = msg;
-  el.className = 'fixed bottom-6 right-6 text-white px-4 py-2 rounded shadow-lg ' +
-                 (isError ? 'bg-red-600' : 'bg-slate-900');
+  el.textContent = (isError ? '✕ ' : '✓ ') + msg;
+  el.className = 'fixed bottom-6 right-6 ' + (isError ? TOAST_ERR : TOAST_OK);
   el.classList.remove('hidden');
   setTimeout(() => el.classList.add('hidden'), 4000);
 }
@@ -167,10 +168,12 @@ async function saveConfig() {
       method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
     if (!r.ok) {
       const detail = (await r.json()).detail;
-      if (detail && typeof detail === 'object') {
-        for (const [key, msg] of Object.entries(detail)) {
-          const el = document.querySelector(`[data-err="${key}"]`);
-          if (el) { el.textContent = msg; el.classList.remove('hidden'); }
+      if (Array.isArray(detail)) {
+        // FastAPI/Pydantic validation errors: [{loc: ["body", "field"], msg: "..."}]
+        for (const e of detail) {
+          const field = (e.loc || []).at(-1);
+          const el = field && document.querySelector(`[data-err="${field}"]`);
+          if (el) { el.textContent = e.msg; el.classList.remove('hidden'); }
         }
         throw new Error('Please fix the highlighted fields');
       }

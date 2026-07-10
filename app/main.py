@@ -5,9 +5,9 @@ import json
 import re
 import threading
 import time
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from urllib.parse import urlparse
 from uuid import uuid4
 
 import yaml
@@ -17,14 +17,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .config import SECRET_KEYS, load_config
-from .db import HealingEvent, Notification, Run, Schedule, StepResult, _now, init_db
+from .db import (ElementFingerprint, HealingEvent, Notification, Run, Schedule,
+                 StepResult, _now, init_db)
 from .envcheck import check_environment
 from .notify import create_notification
+from .reporting import compute_test_health
 from .reports.builder import build_report
 from .runner.executor import run_test
+from .scheduling import BusyError, Scheduler, compute_next_run, preview_firings
 from .schemas import Step, TestBody, TestDefinition, load_test, save_test
-from .scheduling import (BusyError, Scheduler, compute_next_run,
-                         preview_firings, validate_cron)
+from .webmodels import ConfigIn, EmailNotificationsIn, ScheduleIn
 
 BASE = Path(__file__).resolve().parent.parent
 TESTS_DIR = BASE / "tests"
@@ -37,10 +39,15 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "web" / "templ
 session_factory = init_db(DB_PATH)
 REPORTS_DIR.mkdir(exist_ok=True)
 app.mount("/artifacts", StaticFiles(directory=str(REPORTS_DIR)), name="artifacts")
+app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "web" / "static")),
+          name="static")
 
 # Concurrent runs (spec: docs/spec-concurrent-runs.md). Up to MAX_RUNS tests
 # execute in parallel; the same test never runs twice at once because a healed
 # run rewrites its YAML file (selector write-back, F-5).
+# NOTE: slot accounting (_slots, _active_tests) and LIVE_RUNS are in-process
+# state. The app must run as exactly one process — e.g. `uvicorn app.main:app`
+# with no --workers > 1 — or concurrency limits and live status silently break.
 MAX_RUNS = load_config(CONFIG_PATH)["max_concurrent_runs"]  # sized at startup
 _FINISHED_TTL_SECONDS = 60  # finished runs stay visible in live status this long
 
@@ -175,11 +182,11 @@ def _start_run(test_file: Path, trigger: str = "manual",
     try:
         test_def = load_test(test_file)
     except Exception as e:
-        raise HTTPException(422, f"test file could not be parsed: {e}")
+        raise HTTPException(422, f"test file could not be parsed: {e}") from e
     try:
         _acquire(test_def.test.id)
     except _Busy as e:
-        raise HTTPException(409, str(e))
+        raise HTTPException(409, str(e)) from e
     return _launch(test_def, test_file, trigger, schedule_id)
 
 
@@ -189,7 +196,7 @@ def _fire_scheduled(test_file: Path, schedule_id: str) -> None:
     try:
         _acquire(test_def.test.id)
     except _Busy as e:
-        raise BusyError(e.past)
+        raise BusyError(e.past) from e
     _launch(test_def, test_file, "scheduled", schedule_id)
 
 
@@ -289,6 +296,8 @@ def runs_index(request: Request):
         runs = _with_duration(
             db.query(Run).order_by(Run.started_at.desc()).limit(20).all())
         total = db.query(Run).count()
+    for r in runs:
+        r.diag = _diag_counts(r.metrics)
     return templates.TemplateResponse(request, "runs_list.html", {
         "runs": runs, "runs_total": total, "test_names": _test_name_map()})
 
@@ -304,7 +313,7 @@ def api_runs(offset: int = 0, limit: int = 20):
     return JSONResponse({"total": total, "runs": [
         {"id": r.id, "test_id": r.test_id, "test_name": test_names.get(r.test_id, r.test_id),
          "test_exists": r.test_id in test_names, "status": r.status, "duration": r.duration,
-         "trigger": r.trigger,
+         "trigger": r.trigger, "diag": _diag_counts(r.metrics),
          "started_at": r.started_at.strftime("%Y-%m-%d %H:%M:%S")} for r in runs]})
 
 
@@ -328,6 +337,26 @@ def _parse_log(raw: str | None) -> list | None:
         return data if isinstance(data, list) and data else None
     except Exception:
         return None
+
+
+def _diag_counts(metrics_raw: str | None) -> dict | None:
+    """Total console-error/page-error/failed-request counts across all pages
+    of a run's metrics blob (spec: docs/spec-page-diagnostics.md). None when
+    there's nothing to flag, so callers can treat it as "no badge"."""
+    m = _parse_json(metrics_raw)
+    pages = m.get("pages") if m else None
+    if not isinstance(pages, dict) or not pages:
+        return None
+    errors = failed = 0
+    for page in pages.values():
+        if not isinstance(page, dict):
+            continue
+        errors += sum(1 for c in page.get("console") or [] if c.get("level") == "error")
+        errors += len(page.get("page_errors") or [])
+        failed += len(page.get("requests_failed") or [])
+    if not errors and not failed:
+        return None
+    return {"errors": errors, "failed": failed}
 
 
 def _parse_json(raw: str | None) -> dict | None:
@@ -391,8 +420,10 @@ def _run_page_context(run_id: str) -> dict | None:
         s.log_entries = _parse_log(s.log)
     has_report = (REPORTS_DIR / run_id / "report.html").exists()
     _with_duration([run])
+    metrics = _parse_json(getattr(run, "metrics", None))
     return {"run": run, "steps": steps, "healings": healings, "has_report": has_report,
-            "test_info": _test_info_for_run(run)}
+            "test_info": _test_info_for_run(run),
+            "diag_pages": (metrics.get("pages") if metrics else None)}
 
 
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
@@ -410,6 +441,63 @@ def run_detail_fragment(request: Request, run_id: str):
     if ctx is None:
         raise HTTPException(404)
     return templates.TemplateResponse(request, "run_detail_body.html", ctx)
+
+
+@app.get("/api/runs/{run_id}")
+def api_run_detail(run_id: str):
+    """Full machine-readable run detail: everything the run page renders —
+    test snapshot, per-step definitions/logs/errors, healing audit trail,
+    page diagnostics, artifact URLs — as one JSON document."""
+    ctx = _run_page_context(run_id)
+    if ctx is None:
+        raise HTTPException(404)
+    run = ctx["run"]
+
+    def _shot_url(path: str | None) -> str | None:
+        return f"/artifacts/{run_id}/screenshots/{Path(path).name}" if path else None
+
+    steps = [{
+        "index": s.step_index,
+        "type": s.step_type,
+        "intent": (s.defn or {}).get("intent"),
+        "selector": s.selector,
+        "status": s.status,
+        "duration_ms": s.duration_ms,
+        "error": s.error,
+        "error_detail": s.error_detail,
+        "definition": s.defn,
+        "log": s.log_entries or [],
+        "screenshot_url": s.shot_url,
+        "element_screenshot_url": s.element_shot_url,
+    } for s in ctx["steps"]]
+    healings = [{
+        "step_index": h.step_index,
+        "old_selector": h.old_selector,
+        "proposed_selector": h.proposed_selector,
+        "accepted": h.accepted,
+        "model": h.model,
+        "before_screenshot_url": _shot_url(h.before_screenshot),
+        "after_screenshot_url": _shot_url(h.after_screenshot),
+    } for h in ctx["healings"]]
+    return JSONResponse({
+        "id": run.id,
+        "test_id": run.test_id,
+        "status": run.status,
+        "trigger": run.trigger,
+        "schedule_id": run.schedule_id,
+        "skip_reason": run.skip_reason,
+        "started_at": run.started_at.strftime("%Y-%m-%d %H:%M:%S"),
+        "finished_at": (run.finished_at.strftime("%Y-%m-%d %H:%M:%S")
+                        if run.finished_at else None),
+        "duration": run.duration,
+        "error": run.error,
+        "error_summary": run.error_summary,
+        "test": ctx["test_info"],
+        "report_url": f"/artifacts/{run_id}/report.html" if ctx["has_report"] else None,
+        "diagnostics": ctx["diag_pages"],
+        "steps": steps,
+        "healings": healings,
+    })
 
 
 @app.get("/api/runs/{run_id}/live")
@@ -465,7 +553,7 @@ def _validate_body(body: dict) -> TestDefinition:
         td = TestDefinition.model_validate(body)
     except Exception as e:
         errors = e.errors(include_url=False) if hasattr(e, "errors") else str(e)
-        raise HTTPException(422, detail=errors)
+        raise HTTPException(422, detail=errors) from e
     if not TEST_ID_RE.fullmatch(td.test.id):
         raise HTTPException(422, detail="test id must match [a-z0-9-]+")
     if not td.test.steps:
@@ -511,6 +599,18 @@ def api_create_example_test():
     return {"id": EXAMPLE_TEST_ID, "existed": False}
 
 
+def _prune_fingerprints(test_id: str, live_selectors: set[str]) -> None:
+    """Drop fingerprint rows for selectors no longer in the test file
+    (spec: docs/spec-healing-tiers.md §6.1) — cheap since both sides are
+    in hand at save time."""
+    with session_factory() as db:
+        rows = db.query(ElementFingerprint).filter_by(test_id=test_id).all()
+        for row in rows:
+            if row.selector not in live_selectors:
+                db.delete(row)
+        db.commit()
+
+
 @app.post("/api/tests", status_code=201)
 def api_create_test(body: dict):
     td = _validate_body(body)
@@ -529,6 +629,8 @@ def api_update_test(test_id: str, body: dict):
     if td.test.id != test_id:
         raise HTTPException(422, "test id in body must match the URL")
     save_test(td, path)
+    live_selectors = {s.selector for s in td.test.steps if s.selector}
+    _prune_fingerprints(test_id, live_selectors)
     return {"id": test_id}
 
 
@@ -538,6 +640,7 @@ def api_delete_test(test_id: str):
     if not path:
         raise HTTPException(404, f"unknown test '{test_id}'")
     path.unlink()
+    _prune_fingerprints(test_id, set())
     return {"deleted": test_id}
 
 
@@ -563,6 +666,40 @@ def _runs_for_test(db, test_id: str, offset: int, limit: int):
     return _with_duration(
         db.query(Run).filter_by(test_id=test_id)
         .order_by(Run.started_at.desc()).offset(offset).limit(limit).all())
+
+
+_HEALTH_WINDOW = 30  # runs considered for the Health view / client report
+
+
+def _sparkline(values: list[float | None], width: int = 140, height: int = 32) -> str | None:
+    """SVG <polyline> points for a trend series; None when fewer than two
+    non-null values exist (nothing meaningful to draw)."""
+    idx = [i for i, v in enumerate(values) if v is not None]
+    if len(idx) < 2:
+        return None
+    vals = [values[i] for i in idx]
+    lo, hi = min(vals), max(vals)
+    span = (hi - lo) or 1
+    n = len(values)
+    points = []
+    for i in idx:
+        x = (i / (n - 1)) * width
+        y = height - ((values[i] - lo) / span) * height
+        points.append(f"{x:.1f},{y:.1f}")
+    return " ".join(points)
+
+
+def _test_health(db, test_id: str, since=None) -> dict:
+    """Health/grades over the last _HEALTH_WINDOW runs (or since a cutoff
+    date for the client report), oldest-first as compute_test_health expects."""
+    q = db.query(Run).filter_by(test_id=test_id)
+    if since is not None:
+        q = q.filter(Run.started_at >= since)
+    runs = q.order_by(Run.started_at.desc()).limit(_HEALTH_WINDOW).all()
+    health = compute_test_health(list(reversed(runs)))
+    if health["total"]:
+        health["spark"] = {k: _sparkline(v) for k, v in health["series"].items()}
+    return health
 
 
 @app.get("/api/tests/{test_id}/runs")
@@ -596,36 +733,13 @@ def _cadence_label(s: Schedule) -> str:
     return f"Cron: {s.cron_expr}"
 
 
-def _validate_schedule_body(body: dict, require_test: bool = True) -> dict:
-    kind = body.get("kind")
-    out = {"kind": kind, "every_minutes": None, "at_time": None, "cron_expr": None}
-    if kind == "interval":
-        try:
-            n = int(body.get("every_minutes"))
-        except (TypeError, ValueError):
-            raise HTTPException(422, "every_minutes must be an integer")
-        if not 5 <= n <= 10080:
-            raise HTTPException(422, "every_minutes must be between 5 and 10080")
-        out["every_minutes"] = n
-    elif kind == "daily":
-        at = str(body.get("at_time") or "")
-        if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", at):
-            raise HTTPException(422, "at_time must be HH:MM (24h)")
-        out["at_time"] = at
-    elif kind == "cron":
-        expr = str(body.get("cron_expr") or "").strip()
-        err = validate_cron(expr)
-        if err:
-            raise HTTPException(422, err)
-        out["cron_expr"] = expr
-    else:
-        raise HTTPException(422, "kind must be one of: interval, daily, cron")
-    if require_test:
-        test_id = str(body.get("test_id") or "")
-        if not TEST_ID_RE.fullmatch(test_id) or not _test_file_for(test_id):
-            raise HTTPException(404, f"unknown test '{test_id}'")
-        out["test_id"] = test_id
-    return out
+def _check_schedule_test_id(body: ScheduleIn) -> str:
+    """404 (never 422) if test_id is missing, malformed, or unknown — the
+    format/existence check has always been a route-level concern here."""
+    test_id = str(body.test_id or "")
+    if not TEST_ID_RE.fullmatch(test_id) or not _test_file_for(test_id):
+        raise HTTPException(404, f"unknown test '{test_id}'")
+    return test_id
 
 
 def _schedule_json(s: Schedule) -> dict:
@@ -657,9 +771,10 @@ def api_list_schedules():
 
 
 @app.post("/api/schedules", status_code=201)
-def api_create_schedule(body: dict):
-    data = _validate_schedule_body(body)
-    s = Schedule(**data)
+def api_create_schedule(body: ScheduleIn):
+    test_id = _check_schedule_test_id(body)
+    s = Schedule(kind=body.kind, test_id=test_id, every_minutes=body.every_minutes,
+                at_time=body.at_time, cron_expr=body.cron_expr)
     s.next_run_at = compute_next_run(s)
     with session_factory() as db:
         db.add(s)
@@ -668,16 +783,17 @@ def api_create_schedule(body: dict):
 
 
 @app.put("/api/schedules/{schedule_id}")
-def api_update_schedule(schedule_id: str, body: dict):
+def api_update_schedule(schedule_id: str, body: ScheduleIn):
     with session_factory() as db:
         s = db.get(Schedule, schedule_id)
         if not s:
             raise HTTPException(404)
-        data = _validate_schedule_body(body, require_test="test_id" in body)
-        for k, v in data.items():
-            setattr(s, k, v)
-        if "enabled" in body:
-            s.enabled = bool(body["enabled"])
+        if "test_id" in body.model_fields_set:
+            s.test_id = _check_schedule_test_id(body)
+        s.kind, s.every_minutes = body.kind, body.every_minutes
+        s.at_time, s.cron_expr = body.at_time, body.cron_expr
+        if "enabled" in body.model_fields_set:
+            s.enabled = bool(body.enabled)
         s.next_run_at = compute_next_run(s)
         db.commit()
         return _schedule_json(s)
@@ -708,9 +824,9 @@ def api_delete_schedule(schedule_id: str):
 
 
 @app.post("/api/schedules/preview")
-def api_preview_schedule(body: dict):
-    data = _validate_schedule_body(body, require_test=False)
-    s = Schedule(**data)
+def api_preview_schedule(body: ScheduleIn):
+    s = Schedule(kind=body.kind, every_minutes=body.every_minutes,
+                at_time=body.at_time, cron_expr=body.cron_expr)
     return {"firings": [t.astimezone().strftime("%Y-%m-%d %H:%M")
                         for t in preview_firings(s)]}
 
@@ -798,16 +914,15 @@ def api_notifications_read_all():
 
 
 @app.post("/api/settings/email-notifications")
-def api_set_email_notifications(body: dict):
-    enabled = bool(body.get("enabled"))
+def api_set_email_notifications(body: EmailNotificationsIn):
     # Edit just the one top-level line so user comments/formatting survive.
     text_ = CONFIG_PATH.read_text(encoding="utf-8")
-    line = f"email_notifications: {str(enabled).lower()}"
+    line = f"email_notifications: {str(body.enabled).lower()}"
     new, n = re.subn(r"(?m)^email_notifications:.*$", line, text_)
     if n == 0:
         new = text_.rstrip("\n") + f"\n{line}\n"
     CONFIG_PATH.write_text(new, encoding="utf-8")
-    return {"email_notifications": enabled}
+    return {"email_notifications": body.enabled}
 
 
 @app.get("/tests/{name}", response_class=HTMLResponse)
@@ -822,7 +937,7 @@ def show_test(request: Request, name: str):
     except Exception as e:
         td = None
         error = str(e)
-    runs, runs_total, schedules = [], 0, []
+    runs, runs_total, schedules, health = [], 0, [], None
     if td is not None:
         with session_factory() as db:
             runs = _runs_for_test(db, td.test.id, 0, 5)
@@ -830,20 +945,51 @@ def show_test(request: Request, name: str):
             schedules = [_schedule_json(s) for s in
                          db.query(Schedule).filter_by(test_id=td.test.id)
                          .order_by(Schedule.created_at).all()]
+            health = _test_health(db, td.test.id)
     return templates.TemplateResponse(request, "test_show.html", {
         "td": td, "file": path.name, "error": error,
         "raw": path.read_text(encoding="utf-8") if td is None else None,
         "runs": runs, "runs_total": runs_total, "schedules": schedules,
-        "live": _live_snapshot()})
+        "health": health, "live": _live_snapshot()})
+
+
+@app.get("/tests/{test_id}/report", response_class=HTMLResponse)
+def client_report(request: Request, test_id: str, period: str = "30d"):
+    """Client-facing health report (spec: docs/spec-page-diagnostics.md
+    Phase 2). Deliberately shows only the test's display name, page names,
+    grades, and screenshots — never selectors, step JSON, or internal ids."""
+    path = _test_file_for(test_id)
+    if not path:
+        raise HTTPException(404)
+    try:
+        td = load_test(path)
+    except Exception:
+        raise HTTPException(404) from None
+    days = {"7d": 7, "30d": 30}.get(period, 30)
+    since = _now() - timedelta(days=days)
+
+    with session_factory() as db:
+        health = _test_health(db, td.test.id, since=since)
+        latest_pass = (db.query(Run).filter_by(test_id=td.test.id, status="passed")
+                      .order_by(Run.started_at.desc()).first())
+        screenshots = []
+        if latest_pass:
+            steps = (db.query(StepResult).filter_by(run_id=latest_pass.id)
+                    .order_by(StepResult.step_index).all())
+            screenshots = [
+                f"/artifacts/{latest_pass.id}/screenshots/{Path(s.screenshot_path).name}"
+                for s in steps if s.screenshot_path][:6]
+
+    return templates.TemplateResponse(request, "client_report.html", {
+        "test_name": td.test.name or td.test.id, "period": period,
+        "days": days, "health": health, "screenshots": screenshots,
+        "generated_at": _now()})
 
 
 # ---- Config page (spec: docs/spec-run-ux-improvements.md F-6) ----
 # The structured form patches individual settings.yaml lines/blocks so
 # comments and formatting the user left in the file survive; a full
 # rewrite is reserved for the Advanced raw-YAML editor below.
-
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
 
 def _yaml_scalar(value) -> str:
     """A YAML-safe rendering of a single scalar for a patched `key: value` line."""
@@ -910,67 +1056,32 @@ def save_config(request: Request, content: str = Form(...)):
 
 
 @app.put("/api/config")
-def api_update_config(body: dict):
-    errors: dict[str, str] = {}
-
-    def _int(key: str, lo: int, hi: int):
-        try:
-            n = int(body[key])
-        except (KeyError, TypeError, ValueError):
-            errors[key] = "must be an integer"
-            return None
-        if not lo <= n <= hi:
-            errors[key] = f"must be between {lo} and {hi}"
-            return None
-        return n
-
-    starting_url = str(body.get("starting_url") or "").strip()
-    if starting_url:
-        parsed = urlparse(starting_url)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc:
-            errors["starting_url"] = "must be a valid http:// or https:// URL"
-
-    max_concurrent_runs = _int("max_concurrent_runs", 1, 10)
-    num_ctx = _int("ollama_num_ctx", 1, 10_000_000)
-    purchases_per_run = _int("purchases_per_run", 1, 1000)
-
-    notify_email_to = str(body.get("notify_email_to") or "").strip()
-    if notify_email_to and not EMAIL_RE.match(notify_email_to):
-        errors["notify_email_to"] = "must be a valid email address"
-
-    if errors:
-        raise HTTPException(422, detail=errors)
-
+def api_update_config(body: ConfigIn):
     text_ = CONFIG_PATH.read_text(encoding="utf-8")
-    if starting_url:
-        text_ = _patch_yaml_scalar(text_, "starting_url", _yaml_scalar(starting_url))
-    admin_user = str(body.get("admin_user") or "").strip()
-    if admin_user:
-        text_ = _patch_yaml_scalar(text_, "admin_user", _yaml_scalar(admin_user))
-    admin_password = str(body.get("admin_password") or "")
-    if admin_password:  # blank means "keep current value", never "clear"
-        text_ = _patch_yaml_scalar(text_, "admin_password", _yaml_scalar(admin_password))
-    product_id = str(body.get("product_id") or "").strip()
-    if product_id:
-        text_ = _patch_yaml_scalar(text_, "product_id", _yaml_scalar(product_id))
-    if purchases_per_run is not None:
-        text_ = _patch_yaml_scalar(text_, "purchases_per_run", _yaml_scalar(purchases_per_run))
-    if max_concurrent_runs is not None:
-        text_ = _patch_yaml_scalar(text_, "max_concurrent_runs", _yaml_scalar(max_concurrent_runs))
+    if body.starting_url:
+        text_ = _patch_yaml_scalar(text_, "starting_url", _yaml_scalar(body.starting_url))
+    if body.admin_user:
+        text_ = _patch_yaml_scalar(text_, "admin_user", _yaml_scalar(body.admin_user))
+    if body.admin_password:  # blank means "keep current value", never "clear"
+        text_ = _patch_yaml_scalar(text_, "admin_password", _yaml_scalar(body.admin_password))
+    if body.product_id:
+        text_ = _patch_yaml_scalar(text_, "product_id", _yaml_scalar(body.product_id))
+    if body.purchases_per_run is not None:
+        text_ = _patch_yaml_scalar(text_, "purchases_per_run", _yaml_scalar(body.purchases_per_run))
+    if body.max_concurrent_runs is not None:
+        text_ = _patch_yaml_scalar(text_, "max_concurrent_runs", _yaml_scalar(body.max_concurrent_runs))
     text_ = _patch_yaml_scalar(text_, "email_notifications",
-                               _yaml_scalar(bool(body.get("email_notifications"))))
-    if notify_email_to:
-        text_ = _patch_yaml_scalar(text_, "notify_email_to", _yaml_scalar(notify_email_to))
+                               _yaml_scalar(body.email_notifications))
+    if body.notify_email_to:
+        text_ = _patch_yaml_scalar(text_, "notify_email_to", _yaml_scalar(body.notify_email_to))
     text_ = _patch_yaml_nested(text_, "ollama", "enabled",
-                               _yaml_scalar(bool(body.get("ollama_enabled"))))
-    ollama_url = str(body.get("ollama_url") or "").strip()
-    if ollama_url:
-        text_ = _patch_yaml_nested(text_, "ollama", "url", _yaml_scalar(ollama_url))
-    ollama_model = str(body.get("ollama_model") or "").strip()
-    if ollama_model:
-        text_ = _patch_yaml_nested(text_, "ollama", "model", _yaml_scalar(ollama_model))
-    if num_ctx is not None:
-        text_ = _patch_yaml_nested(text_, "ollama", "num_ctx", _yaml_scalar(num_ctx))
+                               _yaml_scalar(body.ollama_enabled))
+    if body.ollama_url:
+        text_ = _patch_yaml_nested(text_, "ollama", "url", _yaml_scalar(body.ollama_url))
+    if body.ollama_model:
+        text_ = _patch_yaml_nested(text_, "ollama", "model", _yaml_scalar(body.ollama_model))
+    if body.ollama_num_ctx is not None:
+        text_ = _patch_yaml_nested(text_, "ollama", "num_ctx", _yaml_scalar(body.ollama_num_ctx))
 
     CONFIG_PATH.write_text(text_, encoding="utf-8")
     return {"saved": True}

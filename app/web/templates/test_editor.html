@@ -1,50 +1,51 @@
 {% extends "base.html" %}
+{% import "_components.html" as c %}
+{% block header %}<span id="page-title">New Test</span>{% endblock %}
 {% block content %}
-<div class="flex items-center justify-between mb-4">
-  <h1 class="text-xl font-bold" id="page-title">New Test</h1>
-  <a href="{{ '/tests/' + test_id if test_id else '/tests' }}" class="text-slate-500 hover:underline">&larr; Back</a>
+<div class="mb-4 flex justify-end">
+  <a href="{{ '/tests/' + test_id if test_id else '/tests' }}" class="{{ c.muted() }} hover:underline">&larr; Back</a>
 </div>
 
 <!-- Header fields -->
-<section class="bg-white rounded-lg border border-slate-200 p-5 mb-4">
-  <div class="grid md:grid-cols-2 gap-4">
+<section class="{{ c.section_cls() }} mb-4 p-6">
+  <div class="grid gap-4 md:grid-cols-2">
     <div>
-      <label class="block text-sm font-medium mb-1">Name <span class="text-red-500">*</span></label>
-      <input id="f-name" type="text" maxlength="120" class="w-full border border-slate-300 rounded px-3 py-2"
+      <label class="{{ c.label_cls() }} mb-1">Name <span class="text-danger-600 dark:text-danger-400">*</span></label>
+      <input id="f-name" type="text" maxlength="120" class="{{ c.input_cls() }} w-full"
              placeholder="e.g. Checkout smoke test">
-      <p class="err text-xs text-red-600 mt-1 hidden" data-err="name"></p>
+      <p class="err mt-1 hidden text-xs text-danger-600 dark:text-danger-400" data-err="name"></p>
     </div>
     <div>
-      <label class="block text-sm font-medium mb-1">ID</label>
-      <input id="f-id" type="text" class="w-full border border-slate-300 rounded px-3 py-2 font-mono text-sm"
+      <label class="{{ c.label_cls() }} mb-1">ID</label>
+      <input id="f-id" type="text" class="{{ c.input_cls() }} w-full font-mono"
              placeholder="auto-generated-from-name">
-      <p class="err text-xs text-red-600 mt-1 hidden" data-err="id"></p>
+      <p class="err mt-1 hidden text-xs text-danger-600 dark:text-danger-400" data-err="id"></p>
     </div>
     <div class="md:col-span-2">
-      <label class="block text-sm font-medium mb-1">Description</label>
-      <textarea id="f-description" rows="2" class="w-full border border-slate-300 rounded px-3 py-2"></textarea>
+      <label class="{{ c.label_cls() }} mb-1">Description</label>
+      <textarea id="f-description" rows="2" class="{{ c.input_cls() }} w-full"></textarea>
     </div>
     <div class="md:col-span-2">
-      <label class="block text-sm font-medium mb-1">Starting URL</label>
-      <input id="f-starting-url" type="text" class="w-full border border-slate-300 rounded px-3 py-2"
+      <label class="{{ c.label_cls() }} mb-1">Starting URL</label>
+      <input id="f-starting-url" type="text" class="{{ c.input_cls() }} w-full"
              placeholder="Leave empty to use the global default from Settings">
-      <p class="text-xs text-slate-500 mt-1">Every run opens this page first, so a leading “Go to URL” step isn't needed.</p>
+      <p class="mt-1 text-xs {{ c.muted() }}">Every run opens this page first, so a leading “Go to URL” step isn't needed.</p>
     </div>
   </div>
   <details class="mt-3">
-    <summary class="text-sm text-slate-600 cursor-pointer select-none">Advanced defaults</summary>
-    <div class="grid md:grid-cols-3 gap-4 mt-3">
+    <summary class="cursor-pointer select-none text-sm {{ c.muted() }}">Advanced defaults</summary>
+    <div class="mt-3 grid gap-4 md:grid-cols-3">
       <div>
-        <label class="block text-sm font-medium mb-1">Default timeout (ms)</label>
-        <input id="f-timeout" type="number" min="100" value="10000" class="w-full border border-slate-300 rounded px-3 py-2">
+        <label class="{{ c.label_cls() }} mb-1">Default timeout (ms)</label>
+        <input id="f-timeout" type="number" min="100" value="10000" class="{{ c.input_cls() }} w-full">
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1">Default retries</label>
-        <input id="f-retries" type="number" min="0" value="1" class="w-full border border-slate-300 rounded px-3 py-2">
+        <label class="{{ c.label_cls() }} mb-1">Default retries</label>
+        <input id="f-retries" type="number" min="0" value="1" class="{{ c.input_cls() }} w-full">
       </div>
       <div class="flex items-end pb-2">
         <label class="inline-flex items-center gap-2 text-sm">
-          <input id="f-healing" type="checkbox" checked class="w-4 h-4"> Healing enabled
+          <input id="f-healing" type="checkbox" checked class="size-4 rounded accent-primary-600"> Healing enabled
         </label>
       </div>
     </div>
@@ -53,26 +54,26 @@
 
 <!-- Steps -->
 <section class="mb-24">
-  <h2 class="font-semibold text-lg mb-2">Steps</h2>
+  <h2 class="mb-2 text-base font-semibold">Steps</h2>
   <div id="steps"></div>
-  <div id="empty-steps" class="hidden bg-white border border-dashed border-slate-300 rounded-lg p-8 text-center text-slate-500">
+  <div id="empty-steps" class="hidden rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center {{ c.muted() }} dark:border-white/20 dark:bg-gray-900">
     No steps yet — add your first step.
   </div>
-  <button onclick="addStep()" class="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">+ Add Step</button>
+  <button onclick="addStep()" class="{{ c.btn_primary() }} mt-3">+ Add Step</button>
 </section>
 
 <!-- Sticky save bar -->
-<div class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-lg">
-  <div class="max-w-5xl mx-auto px-6 py-3 flex items-center gap-3">
+<div class="fixed bottom-0 left-0 right-0 bg-white/80 ring-1 ring-gray-950/5 backdrop-blur lg:left-64 dark:bg-gray-900/80 dark:ring-white/10">
+  <div class="mx-auto flex max-w-7xl items-center gap-3 px-6 py-3">
     <button id="btn-save" onclick="saveTest(false)"
-      class="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2 rounded font-medium">Save Test</button>
+      class="{{ c.btn_primary() }}">Save Test</button>
     <button id="btn-save-run" onclick="saveTest(true)"
-      class="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-5 py-2 rounded font-medium">Save &amp; Run</button>
-    <span id="save-status" class="text-sm text-slate-500"></span>
+      class="{{ c.btn_success() }}">Save &amp; Run</button>
+    <span id="save-status" class="text-sm {{ c.muted() }}"></span>
   </div>
 </div>
 
-<div id="toast" class="hidden fixed bottom-20 right-6 text-white px-4 py-2 rounded shadow-lg"></div>
+<div id="toast" class="hidden fixed bottom-20 right-6 {{ c.toast_ok() }}"></div>
 
 <script>
 const MODE = "{{ mode }}";                       // "new" | "edit"
@@ -108,7 +109,7 @@ if (INITIAL) {
   document.getElementById('f-name').value = t.name || '';
   document.getElementById('f-id').value = t.id;
   document.getElementById('f-id').readOnly = true;
-  document.getElementById('f-id').classList.add('bg-slate-100');
+  document.getElementById('f-id').classList.add('opacity-60');
   document.getElementById('f-description').value = t.description || '';
   document.getElementById('f-starting-url').value = t.starting_url || '';
   const d = t.defaults || {};
@@ -157,17 +158,17 @@ function fieldHtml(i, s, f) {
   if (f === 'condition' || f === 'context') {
     const opts = f === 'condition' ? ['visible', 'hidden', 'navigation', 'delay'] : ['customer', 'admin'];
     const cur = v || opts[0];
-    return `<div class="mt-2"><label class="block text-xs font-medium text-slate-600 mb-1">${FIELD_LABELS[f]}</label>
+    return `<div class="mt-2"><label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">${FIELD_LABELS[f]}</label>
       <select onchange="setField(${i},'${f}',this.value); rerenderCard(${i})"
-        class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+        class="{{ c.input_cls() }}">
         ${opts.map(o => `<option ${o === cur ? 'selected' : ''}>${o}</option>`).join('')}
       </select></div>`;
   }
   if (f === 'timeout_ms') {
-    return `<div class="mt-2"><label class="block text-xs font-medium text-slate-600 mb-1">${FIELD_LABELS[f]}</label>
+    return `<div class="mt-2"><label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">${FIELD_LABELS[f]}</label>
       <input type="number" min="100" value="${v ?? ''}" placeholder="default"
         oninput="setField(${i},'${f}',this.value ? +this.value : null)"
-        class="w-40 border border-slate-300 rounded px-2 py-1.5 text-sm"></div>`;
+        class="w-40 {{ c.input_cls() }}"></div>`;
   }
   // hide selector/intent for wait conditions that don't use them
   if (s.type === 'wait' && (f === 'selector' || f === 'intent') &&
@@ -175,58 +176,60 @@ function fieldHtml(i, s, f) {
   const req = (REQUIRED[s.type] || []).includes(f) ||
               (f === 'intent' && !!s.selector);
   const varHint = VAR_FIELDS.has(f)
-    ? ' <span class="text-xs bg-slate-100 border border-slate-200 rounded px-1" title="Supports config placeholders like {{ '{{' }}starting_url{{ '}}' }}">{ } vars ok</span>' : '';
+    ? ' <span class="text-xs bg-gray-100 ring-1 ring-gray-950/5 dark:bg-white/5 dark:ring-white/10 rounded px-1" title="Supports config placeholders like {{ '{{' }}starting_url{{ '}}' }}">{ } vars ok</span>' : '';
   const ph = f === 'intent' ? 'e.g. The Add to Cart button on the product page' : '';
-  return `<div class="mt-2"><label class="block text-xs font-medium text-slate-600 mb-1">
-      ${FIELD_LABELS[f]}${req ? ' <span class="text-red-500">*</span>' : ''}${varHint}</label>
+  return `<div class="mt-2"><label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+      ${FIELD_LABELS[f]}${req ? ' <span class="text-danger-600 dark:text-danger-400">*</span>' : ''}${varHint}</label>
     <input type="text" value="${esc(v)}" placeholder="${ph}"
       oninput="setField(${i},'${f}',this.value)"
-      class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm ${f === 'selector' ? 'font-mono' : ''}"
+      class="w-full {{ c.input_cls() }} ${f === 'selector' ? 'font-mono' : ''}"
       data-field="${i}:${f}">
-    <p class="err text-xs text-red-600 mt-1 hidden" data-err="${i}:${f}"></p></div>`;
+    <p class="err text-xs text-danger-600 dark:text-danger-400 mt-1 hidden" data-err="${i}:${f}"></p>
+    ${f === 'intent' ? `<p class="warn text-xs text-warning-600 dark:text-warning-400 mt-1 hidden" data-warn="${i}:intent"></p>` : ''}
+    </div>`;
 }
 
 function cardHtml(s, i) {
   const open = s._open;
   const body = !open ? '' : `
     <div class="px-4 pb-4">
-      <div class="mt-2"><label class="block text-xs font-medium text-slate-600 mb-1">Step type</label>
-        <select onchange="changeType(${i}, this.value)" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+      <div class="mt-2"><label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Step type</label>
+        <select onchange="changeType(${i}, this.value)" class="{{ c.input_cls() }}">
           ${Object.entries(TYPES).map(([k, t]) =>
             `<option value="${k}" ${k === s.type ? 'selected' : ''}>${t.label}</option>`).join('')}
         </select></div>
       ${TYPES[s.type].fields.map(f => fieldHtml(i, s, f)).join('')}
       <details class="mt-3">
-        <summary class="text-xs text-slate-500 cursor-pointer select-none">Advanced</summary>
+        <summary class="text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">Advanced</summary>
         <div class="flex gap-4 flex-wrap">
           ${!TYPES[s.type].fields.includes('timeout_ms') ? fieldHtml(i, s, 'timeout_ms') : ''}
-          <div class="mt-2"><label class="block text-xs font-medium text-slate-600 mb-1">Retries</label>
+          <div class="mt-2"><label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Retries</label>
             <input type="number" min="0" value="${s.retries ?? ''}" placeholder="default"
               oninput="setField(${i},'retries',this.value ? +this.value : null)"
-              class="w-28 border border-slate-300 rounded px-2 py-1.5 text-sm"></div>
-          <div class="mt-2"><label class="block text-xs font-medium text-slate-600 mb-1">Capture as</label>
+              class="w-28 {{ c.input_cls() }}"></div>
+          <div class="mt-2"><label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Capture as</label>
             <input type="text" value="${esc(s.capture_as)}"
               oninput="setField(${i},'capture_as',this.value || null)"
-              class="w-40 border border-slate-300 rounded px-2 py-1.5 text-sm font-mono"></div>
+              class="w-40 {{ c.input_cls() }} font-mono"></div>
         </div>
       </details>
     </div>`;
   return `
-  <div class="step-card bg-white border border-slate-200 rounded-lg mb-2" draggable="true" data-index="${i}">
-    <div class="flex items-center gap-2 px-3 py-2 ${open ? 'border-b border-slate-100' : ''}">
-      <span class="drag-handle cursor-grab text-slate-400 select-none" title="Drag to reorder">⠿</span>
-      <span class="text-slate-400 text-sm w-6">${i + 1}.</span>
-      <button onclick="toggleStep(${i})" class="flex-1 text-left text-sm hover:text-blue-700 truncate">
+  <div class="step-card {{ c.section_cls() }} mb-2" draggable="true" data-index="${i}">
+    <div class="flex items-center gap-2 px-3 py-2 ${open ? 'border-b border-gray-200 dark:border-white/10' : ''}">
+      <span class="drag-handle cursor-grab text-gray-400 dark:text-gray-500 select-none" title="Drag to reorder">⠿</span>
+      <span class="text-gray-400 dark:text-gray-500 text-sm w-6 font-mono">${i + 1}.</span>
+      <button onclick="toggleStep(${i})" class="flex-1 text-left text-sm hover:text-primary-600 dark:hover:text-primary-400 truncate">
         ${esc(stepSummary(s))}</button>
-      <p class="err text-xs text-red-600 hidden" data-err="${i}:_card">has errors</p>
-      <button onclick="duplicateStep(${i})" class="text-slate-500 hover:text-slate-800 text-sm" title="Duplicate">⧉</button>
-      <button onclick="removeStep(${i})" class="text-red-500 hover:text-red-700 text-sm" title="Delete">✕</button>
+      <p class="err text-xs text-danger-600 dark:text-danger-400 hidden" data-err="${i}:_card">has errors</p>
+      <button onclick="duplicateStep(${i})" class="text-gray-500 hover:text-gray-950 dark:text-gray-400 dark:hover:text-white text-sm" title="Duplicate">⧉</button>
+      <button onclick="removeStep(${i})" class="text-danger-600 dark:text-danger-400 hover:opacity-75 text-sm" title="Delete">✕</button>
     </div>
     ${body}
   </div>
   <div class="insert-slot h-2 group relative" data-insert="${i + 1}">
     <button onclick="addStep(${i + 1})" title="Insert step here"
-      class="hidden group-hover:block absolute left-1/2 -translate-x-1/2 -top-2 bg-slate-200 hover:bg-blue-600 hover:text-white text-slate-600 rounded-full w-5 h-5 text-xs leading-5">+</button>
+      class="hidden group-hover:block absolute left-1/2 -translate-x-1/2 -top-2 bg-gray-100 ring-1 ring-gray-950/10 hover:bg-primary-600 hover:text-white text-gray-600 dark:bg-white/10 dark:ring-white/20 dark:text-gray-300 rounded-full w-5 h-5 text-xs leading-5">+</button>
   </div>`;
 }
 
@@ -271,8 +274,8 @@ let dragFrom = null;
 function wireDrag() {
   document.querySelectorAll('.step-card').forEach(card => {
     card.addEventListener('dragstart', e => { dragFrom = +card.dataset.index; e.dataTransfer.effectAllowed = 'move'; });
-    card.addEventListener('dragover', e => { e.preventDefault(); card.classList.add('ring-2', 'ring-blue-400'); });
-    card.addEventListener('dragleave', () => card.classList.remove('ring-2', 'ring-blue-400'));
+    card.addEventListener('dragover', e => { e.preventDefault(); card.classList.add('ring-2', 'ring-primary-500'); });
+    card.addEventListener('dragleave', () => card.classList.remove('ring-2', 'ring-primary-500'));
     card.addEventListener('drop', e => {
       e.preventDefault();
       const to = +card.dataset.index;
@@ -314,6 +317,33 @@ function validate() {
   return errors;
 }
 
+// Non-blocking save-time lint (spec: docs/spec-healing-tiers.md §8): a weak
+// intent (short, no quoted text) can't drive Tier 1's deterministic healing.
+function lintWarnings() {
+  const warnings = [];
+  steps.forEach((s, i) => {
+    if (!s.selector || !s.intent) return;
+    const wordCount = s.intent.trim().split(/\s+/).filter(Boolean).length;
+    const hasQuote = /['"][^'"]{3,}['"]/.test(s.intent);
+    if (wordCount < 4 && !hasQuote) {
+      warnings.push({
+        step: i,
+        msg: "Weak intent: quote the element's visible text (e.g. intent: "
+            + "the 'Add to cart' button) to enable deterministic healing.",
+      });
+    }
+  });
+  return warnings;
+}
+
+function paintLintWarnings(warnings) {
+  document.querySelectorAll('.warn').forEach(el => { el.classList.add('hidden'); el.textContent = ''; });
+  for (const w of warnings) {
+    const el = document.querySelector(`[data-warn="${w.step}:intent"]`);
+    if (el) { el.textContent = w.msg; el.classList.remove('hidden'); }
+  }
+}
+
 function buildPayload() {
   const cleanSteps = steps.map(s => {
     const out = {type: s.type};
@@ -344,11 +374,12 @@ function buildPayload() {
   };
 }
 
+const TOAST_OK = '{{ c.toast_ok() }}';
+const TOAST_ERR = '{{ c.toast_ok() }} text-danger-600 dark:text-danger-400';
 function toast(msg, isError) {
   const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'fixed bottom-20 right-6 text-white px-4 py-2 rounded shadow-lg ' +
-                 (isError ? 'bg-red-600' : 'bg-slate-900');
+  el.textContent = (isError ? '✕ ' : '✓ ') + msg;
+  el.className = 'fixed bottom-20 right-6 ' + (isError ? TOAST_ERR : TOAST_OK);
   setTimeout(() => el.classList.add('hidden'), 4000);
 }
 
@@ -359,6 +390,11 @@ async function saveTest(andRun) {
     const firstStep = errors.find(e => e.step != null);
     if (firstStep != null && !steps[firstStep.step]._open) { steps[firstStep.step]._open = true; render(); }
     return;
+  }
+  const warnings = lintWarnings();
+  paintLintWarnings(warnings);
+  if (warnings.length) {
+    toast(warnings[0].msg + (warnings.length > 1 ? ` (+${warnings.length - 1} more)` : ''), false);
   }
   const payload = buildPayload();
   const isNew = MODE === 'new' && !window._savedOnce;
@@ -377,9 +413,10 @@ async function saveTest(andRun) {
     window._savedOnce = true;
     dirty = false;
     document.getElementById('f-id').readOnly = true;
-    document.getElementById('f-id').classList.add('bg-slate-100');
+    document.getElementById('f-id').classList.add('opacity-60');
     document.getElementById('save-status').textContent =
       `Saved at ${new Date().toLocaleTimeString()}`;
+
     toast('Test saved');
     if (andRun) {
       const rr = await fetch(`/api/tests/${payload.test.id}/run`, {method: 'POST'});

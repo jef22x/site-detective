@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import ForeignKey, create_engine, event, inspect, text
@@ -10,7 +10,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sess
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Base(DeclarativeBase):
@@ -35,6 +35,10 @@ class Run(Base):
     # "starting_url" (effective, masked), "defaults"} — the page must show
     # the test as it ran, not as it is now (spec: docs/spec-run-detail-page.md)
     test_snapshot: Mapped[str | None] = mapped_column(default=None)
+    # JSON of page diagnostics (console/network/perf), keyed by context name
+    # (spec: docs/spec-page-diagnostics.md); null for legacy runs or if
+    # collection failed.
+    metrics: Mapped[str | None] = mapped_column(default=None)
 
 
 class Schedule(Base):
@@ -89,6 +93,20 @@ class StepResult(Base):
     log: Mapped[str | None] = mapped_column(default=None)
 
 
+class ElementFingerprint(Base):
+    """What a selector matched the last time its step passed (spec:
+    docs/spec-healing-tiers.md §6.1). Keyed by selector, not step index, so
+    reordering/editing steps never corrupts fingerprints and a healed
+    selector gets a fresh row on its first passing run."""
+    __tablename__ = "element_fingerprints"
+
+    test_id: Mapped[str] = mapped_column(primary_key=True)
+    selector: Mapped[str] = mapped_column(primary_key=True)
+    descriptor: Mapped[str]  # JSON, §4.2 shape, secrets masked
+    captured_at: Mapped[datetime] = mapped_column(default=_now)
+    run_id: Mapped[str]
+
+
 class HealingEvent(Base):
     __tablename__ = "healing_events"
 
@@ -128,6 +146,9 @@ def init_db(db_path: str | Path) -> sessionmaker[Session]:
         "skip_reason": "ALTER TABLE runs ADD COLUMN skip_reason TEXT",
         "error_summary": "ALTER TABLE runs ADD COLUMN error_summary TEXT",
         "test_snapshot": "ALTER TABLE runs ADD COLUMN test_snapshot TEXT",
+        # JSON of page diagnostics (console/network/perf) keyed by context name
+        # (spec: docs/spec-page-diagnostics.md); null for legacy runs.
+        "metrics": "ALTER TABLE runs ADD COLUMN metrics TEXT",
     }
     for col, ddl in migrations.items():
         if col not in run_cols:

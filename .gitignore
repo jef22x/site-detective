@@ -1,6 +1,5 @@
 # Claude / docs
 .claude/
-docs/
 
 # Python
 __pycache__/
@@ -35,3 +34,6 @@ tests/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Tools
+tools/

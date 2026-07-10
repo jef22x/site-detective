@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import yaml
 
@@ -22,9 +22,9 @@ ENV_KEYS = {"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD",
 _VAR_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
 
 
-def _load_dotenv(path: Path) -> Dict[str, str]:
+def _load_dotenv(path: Path) -> dict[str, str]:
     """Minimal .env parser: KEY=VALUE lines, '#' comments, optional quotes."""
-    values: Dict[str, str] = {}
+    values: dict[str, str] = {}
     if not path.is_file():
         return values
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -36,7 +36,7 @@ def _load_dotenv(path: Path) -> Dict[str, str]:
     return values
 
 
-def load_config(path: str | Path) -> Dict[str, Any]:
+def load_config(path: str | Path) -> dict[str, Any]:
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     if not isinstance(data, dict):
         raise ValueError(f"config file {path} must contain a YAML mapping")
@@ -64,7 +64,7 @@ def load_config(path: str | Path) -> Dict[str, Any]:
     return data
 
 
-def resolve(text: str | None, cfg: Dict[str, Any]) -> str | None:
+def resolve(text: str | None, cfg: dict[str, Any]) -> str | None:
     """Replace {{key}} placeholders with config values."""
     if text is None:
         return None
@@ -78,7 +78,7 @@ def resolve(text: str | None, cfg: Dict[str, Any]) -> str | None:
     return _VAR_RE.sub(_sub, text)
 
 
-def mask_secrets(text: str | None, cfg: Dict[str, Any]) -> str | None:
+def mask_secrets(text: str | None, cfg: dict[str, Any]) -> str | None:
     """Replace any secret values appearing in text with '***'."""
     if text is None:
         return None

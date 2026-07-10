@@ -1,0 +1,40 @@
+{# Filament-style components — docs/design-spec-filament-theme.md §5.
+   Tones: passed=success, healed/pending/invalid=warning, failed/error=danger,
+   running/scheduled/new=info, skipped/neutral=gray. #}
+
+{% macro badge(text, tone='gray', title='') -%}
+{%- set tones = {
+  'gray': 'bg-gray-50 text-gray-700 ring-gray-600/20 dark:bg-gray-400/10 dark:text-gray-400 dark:ring-gray-400/30',
+  'primary': 'bg-primary-50 text-primary-700 ring-primary-600/20 dark:bg-primary-400/10 dark:text-primary-400 dark:ring-primary-400/30',
+  'success': 'bg-success-50 text-success-700 ring-success-600/20 dark:bg-success-400/10 dark:text-success-400 dark:ring-success-400/30',
+  'warning': 'bg-warning-50 text-warning-700 ring-warning-600/20 dark:bg-warning-400/10 dark:text-warning-400 dark:ring-warning-400/30',
+  'danger': 'bg-danger-50 text-danger-700 ring-danger-600/20 dark:bg-danger-400/10 dark:text-danger-400 dark:ring-danger-400/30',
+  'info': 'bg-info-50 text-info-700 ring-info-600/20 dark:bg-info-400/10 dark:text-info-400 dark:ring-info-400/30',
+} -%}
+<span class="inline-flex items-center whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset {{ tones.get(tone, tones['gray']) }}"{% if title %} title="{{ title }}"{% endif %}>{{ text }}</span>
+{%- endmacro %}
+
+{% macro status_badge(status) -%}
+{%- set tone_map = {
+  'passed': 'success',
+  'healed_then_passed': 'warning',
+  'running': 'info', 'queued': 'info',
+  'skipped': 'gray', 'skipped_busy': 'gray',
+} -%}
+{{ badge(status | replace('_', ' '), tone_map.get(status, 'danger')) }}
+{%- endmacro %}
+
+{# Class-string helpers so elements keep their own onclick/attrs. #}
+{% macro section_cls() -%}rounded-xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:bg-gray-900 dark:ring-white/10{%- endmacro %}
+{% macro btn_base() -%}inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-primary-600 disabled:opacity-50{%- endmacro %}
+{% macro btn_primary() -%}{{ btn_base() }} bg-primary-600 text-white hover:bg-primary-500{%- endmacro %}
+{% macro btn_secondary() -%}{{ btn_base() }} bg-white text-gray-950 ring-1 ring-gray-950/10 hover:bg-gray-50 dark:bg-white/5 dark:text-white dark:ring-white/20 dark:hover:bg-white/10{%- endmacro %}
+{% macro btn_success() -%}{{ btn_base() }} bg-success-600 text-white hover:bg-success-500{%- endmacro %}
+{% macro btn_danger() -%}{{ btn_base() }} bg-danger-600 text-white hover:bg-danger-500{%- endmacro %}
+{% macro input_cls() -%}block rounded-lg bg-white px-3 py-2 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 outline-none placeholder:text-gray-400 focus:ring-2 focus:ring-primary-600 dark:bg-white/5 dark:text-white dark:ring-white/20{%- endmacro %}
+{% macro label_cls() -%}block text-sm font-medium text-gray-950 dark:text-white{%- endmacro %}
+{% macro th_cls() -%}px-4 py-3 text-left font-semibold text-gray-950 dark:text-white{%- endmacro %}
+{% macro link_cls() -%}font-medium text-primary-600 hover:underline dark:text-primary-400{%- endmacro %}
+{% macro muted() -%}text-gray-500 dark:text-gray-400{%- endmacro %}
+{% macro divide_cls() -%}divide-y divide-gray-200 dark:divide-white/10{%- endmacro %}
+{% macro toast_ok() -%}rounded-xl bg-white p-4 text-sm shadow-lg ring-1 ring-gray-950/5 dark:bg-gray-900 dark:ring-white/10{%- endmacro %}

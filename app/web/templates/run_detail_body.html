@@ -1,39 +1,36 @@
-<h1 class="text-xl font-bold mb-1 flex items-center gap-2">{{ test_info.name if test_info else run.test_id }}
-  <span class="px-2 py-0.5 rounded-full text-white text-sm
-    {% if run.status == 'passed' %}bg-green-600{% elif run.status == 'skipped' %}bg-slate-500
-    {% elif run.status == 'running' %}bg-blue-600{% else %}bg-red-600{% endif %}">{{ run.status }}</span>
+{% import "_components.html" as c %}
+<div class="mb-1 flex flex-wrap items-center gap-2">
+  <h1 class="text-xl font-bold">{{ test_info.name if test_info else run.test_id }}</h1>
+  {{ c.status_badge(run.status) }}
   {% if run.status == 'running' %}
-  <span class="text-xs text-blue-600 flex items-center gap-1" title="This page updates itself">
-    <span class="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span> live</span>
+  <span class="flex items-center gap-1.5 text-xs font-medium text-info-600 dark:text-info-400" title="This page updates itself">
+    <span class="size-2 animate-pulse rounded-full bg-info-500"></span> live</span>
   {% endif %}
   {% if run.trigger == 'scheduled' %}
-  <span class="px-2 py-0.5 rounded-full text-sm bg-indigo-100 text-indigo-800 border border-indigo-200"
-    title="Started by a schedule">🕐 scheduled</span>
+  {{ c.badge('🕐 scheduled', 'info', 'Started by a schedule') }}
   {% endif %}
-  <a href="/tests/{{ run.test_id }}"
-     class="text-xs font-normal px-2 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">View test</a>
-  <a href="/tests/{{ run.test_id }}/edit"
-     class="text-xs font-normal px-2 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">Edit test</a>
-</h1>
-<p class="text-slate-500 text-sm mb-4">Test <code>{{ run.test_id }}</code> · Run <code>{{ run.id }}</code> · {{ run.started_at }}
+  <a href="/tests/{{ run.test_id }}" class="{{ c.btn_secondary() }} px-2.5 py-1.5 text-xs">View test</a>
+  <a href="/tests/{{ run.test_id }}/edit" class="{{ c.btn_secondary() }} px-2.5 py-1.5 text-xs">Edit test</a>
+</div>
+<p class="mb-4 text-sm {{ c.muted() }}">Test <code>{{ run.test_id }}</code> · Run <code>{{ run.id }}</code> · {{ run.started_at }}
   {% if run.duration %} · took {{ run.duration }}{% endif %}
-  {% if has_report %} · <a class="text-blue-700 hover:underline"
+  {% if has_report %} · <a class="{{ c.link_cls() }}"
      href="/artifacts/{{ run.id }}/report.html" target="_blank">Open HTML report</a>{% endif %}
-  {% if run.schedule_id %} · <a class="text-blue-700 hover:underline" href="/schedules">Schedule</a>{% endif %}
+  {% if run.schedule_id %} · <a class="{{ c.link_cls() }}" href="/schedules">Schedule</a>{% endif %}
 </p>
 
 {% if test_info %}
-<section class="bg-white border border-slate-200 rounded-lg p-4 mb-6">
-  <h2 class="font-semibold mb-2">Test details</h2>
-  <dl class="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-sm">
+<section class="{{ c.section_cls() }} mb-6 p-6">
+  <h2 class="mb-2 text-base font-semibold">Test details</h2>
+  <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
     {% if test_info.description %}
-    <dt class="text-slate-500">Description</dt><dd>{{ test_info.description }}</dd>
+    <dt class="{{ c.muted() }}">Description</dt><dd>{{ test_info.description }}</dd>
     {% endif %}
     {% if test_info.starting_url %}
-    <dt class="text-slate-500">Starting URL</dt><dd><code>{{ test_info.starting_url }}</code></dd>
+    <dt class="{{ c.muted() }}">Starting URL</dt><dd><code>{{ test_info.starting_url }}</code></dd>
     {% endif %}
     {% if test_info.defaults %}
-    <dt class="text-slate-500">Defaults</dt>
+    <dt class="{{ c.muted() }}">Defaults</dt>
     <dd>Timeout {{ (test_info.defaults.timeout_ms / 1000) | round(1) }}s
       · Retries {{ test_info.defaults.retries }}
       · Healing {{ "on" if test_info.defaults.healing else "off" }}</dd>
@@ -43,34 +40,34 @@
 {% endif %}
 
 {% if run.skip_reason %}
-<section class="bg-slate-100 border border-slate-300 rounded-lg p-4 mb-6">
-  <h2 class="font-semibold mb-2">Why this run was skipped</h2>
+<section class="{{ c.section_cls() }} mb-6 p-6">
+  <h2 class="mb-2 text-base font-semibold">Why this run was skipped</h2>
   <p class="text-sm">{{ run.skip_reason }}</p>
-  <p class="text-sm text-slate-500 mt-1">Skipped firings are never retried; the schedule catches its next slot.</p>
+  <p class="mt-1 text-sm {{ c.muted() }}">Skipped firings are never retried; the schedule catches its next slot.</p>
 </section>
 {% endif %}
 
 {% if run.error_summary %}
-<section class="bg-red-50 border border-red-300 rounded-lg p-4 mb-6">
-  <h2 class="font-semibold text-red-700 mb-2">Run error</h2>
-  <p class="text-red-700 text-sm whitespace-pre-wrap">{{ run.error_summary }}</p>
+<section class="mb-6 rounded-xl bg-danger-50 p-6 ring-1 ring-danger-600/20 dark:bg-danger-400/10 dark:ring-danger-400/30">
+  <h2 class="mb-2 text-base font-semibold text-danger-700 dark:text-danger-400">Run error</h2>
+  <p class="whitespace-pre-wrap text-sm text-danger-700 dark:text-danger-400">{{ run.error_summary }}</p>
   {% if run.error %}
   <details class="mt-2">
-    <summary class="text-xs text-slate-500 cursor-pointer">Technical details</summary>
-    <pre class="text-red-600 text-xs whitespace-pre-wrap mt-1">{{ run.error }}</pre>
+    <summary class="cursor-pointer text-xs {{ c.muted() }}">Technical details</summary>
+    <pre class="mt-1 whitespace-pre-wrap text-xs text-danger-700 dark:text-danger-400">{{ run.error }}</pre>
   </details>
   {% endif %}
 </section>
 {% elif run.error %}
-<section class="bg-red-50 border border-red-300 rounded-lg p-4 mb-6">
-  <h2 class="font-semibold text-red-700 mb-2">Run error</h2>
-  <pre class="text-red-600 text-xs whitespace-pre-wrap">{{ run.error }}</pre>
+<section class="mb-6 rounded-xl bg-danger-50 p-6 ring-1 ring-danger-600/20 dark:bg-danger-400/10 dark:ring-danger-400/30">
+  <h2 class="mb-2 text-base font-semibold text-danger-700 dark:text-danger-400">Run error</h2>
+  <pre class="whitespace-pre-wrap text-xs text-danger-700 dark:text-danger-400">{{ run.error }}</pre>
 </section>
 {% endif %}
 
 {% if healings %}
-<section class="bg-amber-50 border border-amber-300 rounded-lg p-4 mb-6">
-  <h2 class="font-semibold mb-2">Healing audit trail</h2>
+<section class="mb-6 rounded-xl bg-warning-50 p-6 ring-1 ring-warning-600/20 dark:bg-warning-400/10 dark:ring-warning-400/30">
+  <h2 class="mb-2 text-base font-semibold text-warning-700 dark:text-warning-400">Healing audit trail</h2>
   {% for h in healings %}
   <p class="text-sm">Step #{{ h.step_index }}: <code>{{ h.old_selector }}</code> →
     <code>{{ h.proposed_selector }}</code> ({{ "accepted" if h.accepted else "rejected" }})</p>
@@ -78,98 +75,272 @@
 </section>
 {% endif %}
 
+{% if diag_pages %}
+<section class="{{ c.section_cls() }} mb-6 p-6">
+  <h2 class="mb-3 text-base font-semibold">Page diagnostics</h2>
+  {% for ctx_name, p in diag_pages.items() %}
+  <div class="{% if not loop.last %}mb-4 border-b border-gray-200 pb-4 dark:border-white/10{% endif %}">
+    <p class="mb-2 text-xs {{ c.muted() }}">
+      Page <code>{{ ctx_name }}</code>{% if p.final_url %} · <code>{{ p.final_url }}</code>{% endif %}
+    </p>
+
+    {% set n_errors = (p.console | selectattr('level', 'equalto', 'error') | list | length) + (p.page_errors | length) %}
+    {% if n_errors == 0 and (p.requests_failed | length) == 0 %}
+    <p class="text-sm text-success-600 dark:text-success-400">No console or network errors detected.</p>
+    {% endif %}
+
+    {% if p.console or p.page_errors %}
+    <details class="mt-1" {% if n_errors > 0 %}open{% endif %}>
+      <summary class="cursor-pointer text-xs {{ c.muted() }}">
+        Console &amp; page errors ({{ n_errors }} error{{ 's' if n_errors != 1 else '' }},
+        {{ p.console | selectattr('level', 'equalto', 'warning') | list | length }} warning{{ 's' if (p.console | selectattr('level', 'equalto', 'warning') | list | length) != 1 else '' }})</summary>
+      <ol class="mt-1 space-y-0.5 font-mono text-xs">
+        {% for e in p.page_errors %}
+        <li class="flex gap-2"><span class="w-16 shrink-0 text-right text-gray-400 dark:text-gray-500">+{{ e.t }} ms</span>
+          <span class="text-danger-600 dark:text-danger-400">{{ e.text }}</span></li>
+        {% endfor %}
+        {% for e in p.console %}
+        <li class="flex gap-2"><span class="w-16 shrink-0 text-right text-gray-400 dark:text-gray-500">+{{ e.t }} ms</span>
+          <span class="{{ 'text-danger-600 dark:text-danger-400' if e.level == 'error' else 'text-warning-600 dark:text-warning-400' }}">{{ e.text }}
+            {% if e.count and e.count > 1 %}<span class="{{ c.muted() }}">(×{{ e.count }})</span>{% endif %}</span></li>
+        {% endfor %}
+      </ol>
+    </details>
+    {% endif %}
+
+    {% if p.requests_failed %}
+    <details class="mt-2" open>
+      <summary class="cursor-pointer text-xs {{ c.muted() }}">Failed requests ({{ p.requests_failed | length }})</summary>
+      <div class="mt-1 overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead><tr class="border-b border-gray-200 text-left dark:border-white/10">
+          <th class="py-1 pr-2 font-semibold">Method</th><th class="pr-2 font-semibold">Status</th><th class="font-semibold">URL</th></tr></thead>
+        <tbody class="{{ c.divide_cls() }}">
+          {% for req in p.requests_failed %}
+          <tr>
+            <td class="py-1 pr-2 font-mono">{{ req.method }}</td>
+            <td class="pr-2 text-danger-600 dark:text-danger-400">{{ req.status or req.error or 'failed' }}</td>
+            <td class="break-all font-mono {{ c.muted() }}">{{ req.url }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </details>
+    {% endif %}
+
+    {% if p.insecure_requests %}
+    <details class="mt-2">
+      <summary class="cursor-pointer text-xs {{ c.muted() }}">Insecure (HTTP) requests ({{ p.insecure_requests | length }})</summary>
+      <ol class="mt-1 space-y-0.5 font-mono text-xs">
+        {% for u in p.insecure_requests %}<li class="break-all text-warning-600 dark:text-warning-400">{{ u }}</li>{% endfor %}
+      </ol>
+    </details>
+    {% endif %}
+
+    {% if p.perf %}
+    <div class="mt-3">
+      <p class="mb-1 text-xs font-semibold">Performance snapshot</p>
+      <dl class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-4">
+        {% if p.perf.ttfb_ms is not none %}<div><dt class="text-xs {{ c.muted() }}">TTFB</dt><dd class="font-mono">{{ p.perf.ttfb_ms }} ms</dd></div>{% endif %}
+        {% if p.perf.dcl_ms is not none %}<div><dt class="text-xs {{ c.muted() }}">DOM content loaded</dt><dd class="font-mono">{{ p.perf.dcl_ms }} ms</dd></div>{% endif %}
+        {% if p.perf.load_ms is not none %}<div><dt class="text-xs {{ c.muted() }}">Load</dt><dd class="font-mono">{{ p.perf.load_ms }} ms</dd></div>{% endif %}
+        {% if p.perf.lcp_ms is not none %}<div><dt class="text-xs {{ c.muted() }}">LCP</dt><dd class="font-mono">{{ p.perf.lcp_ms }} ms</dd></div>{% endif %}
+        {% if p.perf.cls is not none %}<div><dt class="text-xs {{ c.muted() }}">CLS</dt><dd class="font-mono">{{ p.perf.cls }}</dd></div>{% endif %}
+        {% if p.perf.transfer_bytes is not none %}<div><dt class="text-xs {{ c.muted() }}">Page weight</dt><dd class="font-mono">{{ (p.perf.transfer_bytes / 1024 / 1024) | round(2) }} MB</dd></div>{% endif %}
+        {% if p.perf.request_count is not none %}<div><dt class="text-xs {{ c.muted() }}">Requests</dt><dd class="font-mono">{{ p.perf.request_count }}</dd></div>{% endif %}
+      </dl>
+      {% if p.perf.by_type %}
+      <div class="mt-2 font-mono text-xs {{ c.muted() }}">
+        {% for kind, b in p.perf.by_type.items() %}<span class="mr-3">{{ kind }}: {{ b.count }} · {{ (b.bytes / 1024) | round(0) | int }} KB</span>{% endfor %}
+      </div>
+      {% endif %}
+      {% if p.perf.slowest %}
+      <details class="mt-2">
+        <summary class="cursor-pointer text-xs {{ c.muted() }}">Slowest resources</summary>
+        <ol class="mt-1 space-y-0.5 font-mono text-xs">
+          {% for res in p.perf.slowest[:5] %}
+          <li class="flex gap-2"><span class="w-16 shrink-0 text-right text-gray-400 dark:text-gray-500">{{ res.ms }} ms</span>
+            <span class="break-all {{ c.muted() }}">{{ res.url }}</span></li>
+          {% endfor %}
+        </ol>
+      </details>
+      {% endif %}
+      <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">Measured headless from the runner — useful for trends, not comparable to real-user timings.</p>
+    </div>
+    {% endif %}
+
+    {% if p.a11y %}
+    {% set impact_class = {'critical': 'text-danger-600 dark:text-danger-400', 'serious': 'text-danger-600 dark:text-danger-400',
+                           'moderate': 'text-warning-600 dark:text-warning-400', 'minor': 'text-gray-500 dark:text-gray-400'} %}
+    <div class="mt-3">
+      <p class="mb-1 text-xs font-semibold">Accessibility (axe-core {{ p.a11y.axe_version or '' }})</p>
+      {% set total_violations = p.a11y.counts.values() | sum %}
+      {% if total_violations == 0 %}
+      <p class="text-sm text-success-600 dark:text-success-400">No accessibility violations detected.</p>
+      {% else %}
+      <p class="mb-1 text-xs {{ c.muted() }}">
+        {% for impact, count in p.a11y.counts.items() %}{% if count %}<span class="mr-3 {{ impact_class.get(impact) }}">{{ impact }}: {{ count }}</span>{% endif %}{% endfor %}
+      </p>
+      <details {% if p.a11y.counts.get('critical') or p.a11y.counts.get('serious') %}open{% endif %}>
+        <summary class="cursor-pointer text-xs {{ c.muted() }}">{{ p.a11y.violations | length }} rule{{ 's' if p.a11y.violations | length != 1 }} violated</summary>
+        <ol class="mt-1 space-y-1 text-xs">
+          {% for v in p.a11y.violations %}
+          <li>
+            <span class="{{ impact_class.get(v.impact, 'text-gray-500 dark:text-gray-400') }} font-mono">{{ v.id }}</span>
+            <span class="{{ c.muted() }}">({{ v.impact }}, {{ v.count }}×)</span>
+            {% if v.sample_targets %}<div class="ml-2 font-mono text-gray-400 dark:text-gray-500">{{ v.sample_targets | join(', ') }}</div>{% endif %}
+          </li>
+          {% endfor %}
+        </ol>
+      </details>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if p.content %}
+    <div class="mt-3">
+      <p class="mb-1 text-xs font-semibold">Content &amp; SEO</p>
+      <ul class="space-y-0.5 text-sm">
+        <li class="{{ 'text-danger-600 dark:text-danger-400' if p.content.broken_images else 'text-success-600 dark:text-success-400' }}">
+          {{ '✗' if p.content.broken_images else '✓' }} Broken images: {{ p.content.broken_images | length }}</li>
+        <li class="{{ 'text-warning-600 dark:text-warning-400' if p.content.missing_alt else 'text-success-600 dark:text-success-400' }}">
+          {{ '✗' if p.content.missing_alt else '✓' }} Images missing alt text: {{ p.content.missing_alt | length }}</li>
+        <li class="{{ 'text-success-600 dark:text-success-400' if p.content.title else 'text-warning-600 dark:text-warning-400' }}">
+          {{ '✓' if p.content.title else '✗' }} Title: {{ p.content.title or 'missing' }}</li>
+        <li class="{{ 'text-success-600 dark:text-success-400' if p.content.meta_description else 'text-warning-600 dark:text-warning-400' }}">
+          {{ '✓' if p.content.meta_description else '✗' }} Meta description:
+          {{ p.content.meta_description or 'missing' }}</li>
+        <li class="{{ 'text-success-600 dark:text-success-400' if p.content.h1_count == 1 else 'text-warning-600 dark:text-warning-400' }}">
+          {{ '✓' if p.content.h1_count == 1 else '✗' }} H1 count: {{ p.content.h1_count }}</li>
+        {% if p.content.redirect_chain %}
+        <li class="text-warning-600 dark:text-warning-400">✗ Redirect chain ({{ p.content.redirect_chain | length }} hops):
+          <span class="font-mono text-xs">{{ p.content.redirect_chain | join(' → ') }}</span></li>
+        {% endif %}
+      </ul>
+      {% if p.content.broken_images or p.content.missing_alt %}
+      <details class="mt-1">
+        <summary class="cursor-pointer text-xs {{ c.muted() }}">Details</summary>
+        {% if p.content.broken_images %}<p class="mt-1 text-xs {{ c.muted() }}">Broken:</p>
+        <ol class="font-mono text-xs">{% for u in p.content.broken_images %}<li class="break-all">{{ u }}</li>{% endfor %}</ol>{% endif %}
+        {% if p.content.missing_alt %}<p class="mt-1 text-xs {{ c.muted() }}">Missing alt:</p>
+        <ol class="font-mono text-xs">{% for u in p.content.missing_alt %}<li class="break-all">{{ u }}</li>{% endfor %}</ol>{% endif %}
+      </details>
+      {% endif %}
+      {% if p.content.third_party %}
+      <details class="mt-1">
+        <summary class="cursor-pointer text-xs {{ c.muted() }}">Third-party requests ({{ p.content.third_party | length }} domains)</summary>
+        <table class="mt-1 w-full text-xs">
+          <tbody class="{{ c.divide_cls() }}">
+            {% for tp in p.content.third_party %}
+            <tr>
+              <td class="py-0.5 font-mono">{{ tp.domain }}</td>
+              <td class="text-right font-mono">{{ tp.count }} req</td>
+              <td class="text-right font-mono">{{ (tp.bytes / 1024) | round(0) | int }} KB</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+      {% endif %}
+      <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">Reflects only the pages this test visits — not a whole-site scan.</p>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
 {% for s in steps %}
 {% set d = s.defn %}
-<div class="bg-white border border-slate-200 rounded-lg p-4 mb-4" data-step="{{ s.step_index }}">
+<div class="{{ c.section_cls() }} mb-4 p-6 {% if s.status not in ('passed', 'healed_then_passed', 'skipped') %}ring-danger-600/30 dark:ring-danger-400/30{% endif %}" data-step="{{ s.step_index }}">
   <div class="flex items-center gap-3">
     <strong>#{{ s.step_index }} {{ s.type_label }}</strong>
-    <span class="px-2 py-0.5 rounded-full text-white text-xs
-      {% if s.status == 'passed' %}bg-green-600{% elif s.status == 'healed_then_passed' %}bg-amber-600
-      {% elif s.status == 'skipped' %}bg-slate-500{% else %}bg-red-600{% endif %}">{{ s.status }}</span>
-    <span class="text-slate-400 text-sm">{{ s.duration_ms }} ms</span>
+    {{ c.status_badge(s.status) }}
+    <span class="font-mono text-sm text-gray-400 dark:text-gray-500">{{ s.duration_ms }} ms</span>
   </div>
   {% if d and d.intent %}
-  <p class="text-slate-700 text-sm mt-1 italic">{{ d.intent }}</p>
+  <p class="mt-1 text-sm italic {{ c.muted() }}">{{ d.intent }}</p>
   {% endif %}
   {% if d %}
-  <dl class="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-sm mt-2">
+  <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
     {% if s.step_type == 'navigate' and d.url %}
-    <dt class="text-slate-500">URL</dt><dd><code>{{ d.url }}</code></dd>
+    <dt class="{{ c.muted() }}">URL</dt><dd><code>{{ d.url }}</code></dd>
     {% endif %}
     {% if s.step_type == 'wait' %}
-    <dt class="text-slate-500">Condition</dt><dd>{{ d.get('condition', 'visible') }}</dd>
+    <dt class="{{ c.muted() }}">Condition</dt><dd>{{ d.get('condition', 'visible') }}</dd>
     {% endif %}
     {% if d.selector %}
-    <dt class="text-slate-500">Selector</dt><dd><code>{{ d.selector }}</code></dd>
+    <dt class="{{ c.muted() }}">Selector</dt><dd><code>{{ d.selector }}</code></dd>
     {% endif %}
     {% if s.step_type in ('type', 'select') and d.value %}
-    <dt class="text-slate-500">Value</dt><dd><code>{{ d.value }}</code></dd>
+    <dt class="{{ c.muted() }}">Value</dt><dd><code>{{ d.value }}</code></dd>
     {% endif %}
     {% if d.clear_first %}
-    <dt class="text-slate-500">Clears field first</dt><dd>Yes</dd>
+    <dt class="{{ c.muted() }}">Clears field first</dt><dd>Yes</dd>
     {% endif %}
     {% if s.step_type == 'assert_element' %}
-    <dt class="text-slate-500">Expectation</dt>
+    <dt class="{{ c.muted() }}">Expectation</dt>
     <dd>Element {{ "exists" if d.get('exists', true) else "is absent" }}</dd>
     {% if d.text_contains %}
-    <dt class="text-slate-500">Must contain</dt><dd>{{ d.text_contains }}</dd>
+    <dt class="{{ c.muted() }}">Must contain</dt><dd>{{ d.text_contains }}</dd>
     {% endif %}
     {% endif %}
     {% if s.step_type == 'screenshot' %}
-    {% if d.label %}<dt class="text-slate-500">Label</dt><dd>{{ d.label }}</dd>{% endif %}
-    {% if d.full_page %}<dt class="text-slate-500">Full page</dt><dd>Yes</dd>{% endif %}
+    {% if d.label %}<dt class="{{ c.muted() }}">Label</dt><dd>{{ d.label }}</dd>{% endif %}
+    {% if d.full_page %}<dt class="{{ c.muted() }}">Full page</dt><dd>Yes</dd>{% endif %}
     {% endif %}
     {% if s.step_type == 'login' or d.get('context') == 'admin' %}
-    <dt class="text-slate-500">Context</dt><dd>admin</dd>
+    <dt class="{{ c.muted() }}">Context</dt><dd>admin</dd>
     {% endif %}
     {% if d.timeout_ms %}
-    <dt class="text-slate-500">Timeout</dt><dd>{{ (d.timeout_ms / 1000) | round(1) }}s</dd>
+    <dt class="{{ c.muted() }}">Timeout</dt><dd>{{ (d.timeout_ms / 1000) | round(1) }}s</dd>
     {% endif %}
     {% if d.retries is defined and d.retries is not none %}
-    <dt class="text-slate-500">Retries</dt><dd>{{ d.retries }}</dd>
+    <dt class="{{ c.muted() }}">Retries</dt><dd>{{ d.retries }}</dd>
     {% endif %}
   </dl>
   {% if s.status == 'healed_then_passed' and s.selector and d.selector and s.selector != d.selector %}
-  <p class="text-amber-700 text-sm mt-2">Selector healed:
+  <p class="mt-2 text-sm text-warning-600 dark:text-warning-400">Selector healed:
     <code>{{ d.selector }}</code> → <code>{{ s.selector }}</code></p>
   {% endif %}
   {% endif %}
   {% if s.log_entries %}
-  {% set kind_classes = {'action': 'text-slate-700', 'info': 'text-slate-500',
-                         'retry': 'text-orange-600', 'healing': 'text-amber-700',
-                         'screenshot': 'text-slate-400', 'error': 'text-red-700'} %}
+  {% set kind_classes = {'action': 'text-gray-950 dark:text-white', 'info': 'text-gray-500 dark:text-gray-400',
+                         'retry': 'text-warning-600 dark:text-warning-400', 'healing': 'text-warning-600 dark:text-warning-400',
+                         'screenshot': 'text-gray-400 dark:text-gray-500', 'error': 'text-danger-600 dark:text-danger-400'} %}
   <details class="mt-2" data-section="log" {% if s.status in ('failed', 'healed_then_passed') %}open{% endif %}>
-    <summary class="text-xs text-slate-500 cursor-pointer">
+    <summary class="cursor-pointer text-xs {{ c.muted() }}">
       Execution log ({{ s.log_entries | length }} entries)</summary>
-    <ol class="mt-1 text-xs font-mono space-y-0.5">
+    <ol class="mt-1 space-y-0.5 font-mono text-xs">
       {% for e in s.log_entries %}
       <li class="flex gap-2">
-        <span class="text-slate-400 w-16 text-right shrink-0">+{{ e.t }} ms</span>
-        <span class="{{ kind_classes.get(e.kind, 'text-slate-500') }}">{{ e.msg }}</span>
+        <span class="w-16 shrink-0 text-right text-gray-400 dark:text-gray-500">+{{ e.t }} ms</span>
+        <span class="{{ kind_classes.get(e.kind, 'text-gray-500 dark:text-gray-400') }}">{{ e.msg }}</span>
       </li>
       {% endfor %}
     </ol>
   </details>
   {% endif %}
-  {% if s.error %}<p class="text-red-700 text-sm mt-2 whitespace-pre-wrap">{{ s.error }}</p>{% endif %}
+  {% if s.error %}<p class="mt-2 whitespace-pre-wrap text-sm text-danger-600 dark:text-danger-400">{{ s.error }}</p>{% endif %}
   {% if s.error_detail %}
   <details class="mt-1" data-section="error-detail">
-    <summary class="text-xs text-slate-500 cursor-pointer">Technical details</summary>
-    <pre class="text-red-600 text-xs whitespace-pre-wrap mt-1">{{ s.error_detail }}</pre>
+    <summary class="cursor-pointer text-xs {{ c.muted() }}">Technical details</summary>
+    <pre class="mt-1 whitespace-pre-wrap text-xs text-danger-600 dark:text-danger-400">{{ s.error_detail }}</pre>
   </details>
   {% endif %}
   {% if s.element_shot_url %}
   <figure class="mt-2 inline-block">
-    <figcaption class="text-xs text-slate-500 mb-1">Element snapshot</figcaption>
+    <figcaption class="mb-1 text-xs {{ c.muted() }}">Element snapshot</figcaption>
     <a href="{{ s.element_shot_url }}" target="_blank">
       <img src="{{ s.element_shot_url }}" loading="lazy"
-           class="max-h-48 border border-slate-200 rounded" alt="Element snapshot">
+           class="max-h-48 rounded-lg ring-1 ring-gray-950/10 dark:ring-white/10" alt="Element snapshot">
     </a>
   </figure>
   {% endif %}
   {% if s.shot_url %}
-  <details class="mt-2" data-section="screenshot"><summary class="cursor-pointer text-sm text-blue-700">Screenshot</summary>
-    <img src="{{ s.shot_url }}" class="mt-2 border border-slate-200 rounded max-w-3xl" loading="lazy">
+  <details class="mt-2" data-section="screenshot"><summary class="{{ c.link_cls() }} cursor-pointer text-sm">Screenshot</summary>
+    <img src="{{ s.shot_url }}" class="mt-2 max-w-3xl rounded-lg ring-1 ring-gray-950/10 dark:ring-white/10" loading="lazy">
   </details>
   {% endif %}
 </div>

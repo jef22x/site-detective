@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+{% import "_components.html" as c %}
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ test_name }} — Health Report</title>
+  <script>
+    (function () {
+      const t = localStorage.theme;
+      document.documentElement.classList.toggle('dark',
+        t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches));
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/tailwind.css">
+  <style>
+    @media print {
+      .no-print { display: none; }
+      html.dark, html.dark body { background: white !important; color: #09090b !important; }
+      section { box-shadow: none !important; }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-950 antialiased dark:bg-gray-950 dark:text-white print:bg-white">
+  <main class="mx-auto max-w-3xl p-8">
+    <div class="no-print mb-4 flex justify-end gap-3 text-sm">
+      <a href="?period=7d" class="{{ c.link_cls() }} {{ 'underline' if period == '7d' }}">7 days</a>
+      <a href="?period=30d" class="{{ c.link_cls() }} {{ 'underline' if period == '30d' }}">30 days</a>
+      <button onclick="window.print()" class="{{ c.link_cls() }}">Print / Save as PDF</button>
+    </div>
+
+    <h1 class="text-2xl font-bold tracking-tight">{{ test_name }}</h1>
+    <p class="mb-6 text-sm {{ c.muted() }}">Health report · last {{ days }} days · generated {{ generated_at.strftime('%Y-%m-%d %H:%M UTC') }}</p>
+
+    {% if not health.total %}
+    <p class="{{ c.muted() }}">No runs in this period.</p>
+    {% else %}
+
+    <section class="{{ c.section_cls() }} mb-6 p-6">
+      <h2 class="mb-3 text-base font-semibold">Summary</h2>
+      <p class="text-sm">
+        {{ health.total }} run{{ '' if health.total == 1 else 's' }} executed,
+        {{ health.passed }} passed
+        ({{ (health.pass_rate * 100) | round(1) }}%).
+        {% if health.deltas %}
+        {% for d in health.deltas %}{{ d.label }} is {{ d.pct }}%
+        {{ 'slower' if d.direction == 'up' else 'faster' }} than its recent median.
+        {% endfor %}
+        {% else %}
+        No significant sustained changes in speed or weight this period.
+        {% endif %}
+      </p>
+    </section>
+
+    <section class="{{ c.section_cls() }} mb-6 p-6">
+      <h2 class="mb-3 text-base font-semibold">Health grades</h2>
+      {% set grade_cls = {
+        'A': 'bg-success-50 text-success-700 ring-success-600/20 dark:bg-success-400/10 dark:text-success-400 dark:ring-success-400/30',
+        'B': 'bg-success-50 text-success-700 ring-success-600/20 dark:bg-success-400/10 dark:text-success-400 dark:ring-success-400/30',
+        'C': 'bg-warning-50 text-warning-700 ring-warning-600/20 dark:bg-warning-400/10 dark:text-warning-400 dark:ring-warning-400/30',
+        'D': 'bg-warning-50 text-warning-700 ring-warning-600/20 dark:bg-warning-400/10 dark:text-warning-400 dark:ring-warning-400/30',
+        'E': 'bg-danger-50 text-danger-700 ring-danger-600/20 dark:bg-danger-400/10 dark:text-danger-400 dark:ring-danger-400/30'} %}
+      {% set grade_desc = {'reliability': 'Reliability', 'errors': 'Errors',
+                           'speed': 'Speed', 'weight': 'Page weight', 'accessibility': 'Accessibility'} %}
+      <div class="flex flex-wrap gap-6">
+        {% for key, label in grade_desc.items() %}
+        {% if health.grades.get(key) %}
+        <div class="flex flex-col items-center">
+          <span class="flex size-12 items-center justify-center rounded-full text-lg font-bold ring-1 ring-inset {{ grade_cls.get(health.grades[key], grade_cls['C']) }}">{{ health.grades[key] }}</span>
+          <span class="mt-1 text-xs {{ c.muted() }}">{{ label }}</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </section>
+
+    {% if screenshots %}
+    <section class="{{ c.section_cls() }} mb-6 p-6">
+      <h2 class="mb-3 text-base font-semibold">Latest passing run</h2>
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {% for shot in screenshots %}
+        <img src="{{ shot }}" class="w-full rounded-lg ring-1 ring-gray-950/10 dark:ring-white/10">
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    {% if health.new_errors or health.recurring_errors %}
+    <section class="{{ c.section_cls() }} mb-6 p-6">
+      <h2 class="mb-3 text-base font-semibold">Issues</h2>
+      {% if health.new_errors %}
+      <p class="mb-1 text-xs {{ c.muted() }}">New this period</p>
+      <ol class="mb-3 space-y-0.5 font-mono text-xs">
+        {% for e in health.new_errors %}<li class="break-all text-danger-700 dark:text-danger-400">{{ e }}</li>{% endfor %}
+      </ol>
+      {% endif %}
+      {% if health.recurring_errors %}
+      <p class="mb-1 text-xs {{ c.muted() }}">Recurring</p>
+      <ol class="space-y-0.5 font-mono text-xs">
+        {% for e in health.recurring_errors %}<li class="break-all text-warning-700 dark:text-warning-400">{{ e }}</li>{% endfor %}
+      </ol>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    <p class="mt-8 text-xs text-gray-400 dark:text-gray-500">
+      Methodology: measurements are synthetic, taken headless from the test runner —
+      useful for spotting trends, not a substitute for real-user monitoring.</p>
+    {% endif %}
+  </main>
+</body>
+</html>

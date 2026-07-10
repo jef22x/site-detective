@@ -11,9 +11,8 @@ zero side effects.
 from __future__ import annotations
 
 import threading
-import time as _time
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from croniter import croniter
 
@@ -39,10 +38,10 @@ def compute_next_run(schedule, after_utc: datetime | None = None) -> datetime:
         candidate = after_local.replace(hour=hh, minute=mm, second=0, microsecond=0)
         if candidate <= after_local:
             candidate += timedelta(days=1)
-        return candidate.astimezone(timezone.utc)
+        return candidate.astimezone(UTC)
     if schedule.kind == "cron":
         nxt = croniter(schedule.cron_expr, after_local).get_next(datetime)
-        return nxt.astimezone(timezone.utc)
+        return nxt.astimezone(UTC)
     raise ValueError(f"unknown schedule kind '{schedule.kind}'")
 
 
@@ -72,7 +71,7 @@ def preview_firings(schedule, count: int = 3) -> list[datetime]:
 def _as_utc(dt: datetime | None) -> datetime | None:
     """SQLite returns naive datetimes; our writes are always UTC."""
     if dt is not None and dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
     return dt
 
 

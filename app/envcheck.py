@@ -5,13 +5,13 @@ import json
 import smtplib
 import time
 import urllib.request
-from typing import Any, Dict
+from typing import Any
 
 # Some SMTP providers rate-limit or flag repeated logins, so a successful
 # (or failed) check is reused for a few minutes instead of re-authenticating
 # on every dashboard load.
 _SMTP_CACHE_TTL = 300.0
-_smtp_cache: Dict[str, Any] = {"key": None, "at": 0.0, "result": None}
+_smtp_cache: dict[str, Any] = {"key": None, "at": 0.0, "result": None}
 
 
 def _reachable(url: str, timeout: float = 3.0) -> bool:
@@ -23,7 +23,7 @@ def _reachable(url: str, timeout: float = 3.0) -> bool:
         return False
 
 
-def _check_smtp(cfg: Dict[str, Any]) -> Dict[str, Any]:
+def _check_smtp(cfg: dict[str, Any]) -> dict[str, Any]:
     """Verify the notification mail path without sending an email: connect,
     EHLO, STARTTLS on 587, and log in if credentials are set. Reports the
     failing stage; never includes secret values in the error."""
@@ -63,7 +63,7 @@ def _check_smtp(cfg: Dict[str, Any]) -> Dict[str, Any]:
 # Model context lengths come from POST /api/show, which is slow-ish and
 # static per model file, so results are cached like the SMTP check.
 _OLLAMA_SHOW_TTL = 300.0
-_ollama_show_cache: Dict[str, Dict[str, Any]] = {}
+_ollama_show_cache: dict[str, dict[str, Any]] = {}
 
 
 def _model_max_ctx(base: str, name: str) -> Any:
@@ -93,12 +93,12 @@ def _model_max_ctx(base: str, name: str) -> Any:
     return max_ctx
 
 
-def _check_ollama(cfg: Dict[str, Any]) -> Dict[str, Any]:
+def _check_ollama(cfg: dict[str, Any]) -> dict[str, Any]:
     """Ollama health for the dashboard: reachability, the configured model
     (from settings.yaml — never hard-coded), the num_ctx we request, the
     model's maximum context, and all installed models."""
     ollama = cfg.get("ollama") or {}
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "enabled": bool(ollama.get("enabled")), "ok": False, "url": None,
         "configured_model": None, "model_present": False,
         "num_ctx": None, "model_max_ctx": None, "models": [], "warning": None,
@@ -139,11 +139,11 @@ def _check_ollama(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def check_environment(cfg: Dict[str, Any]) -> Dict[str, Any]:
+def check_environment(cfg: dict[str, Any]) -> dict[str, Any]:
     """Returns reachability of the default starting URL, health of the SMTP
     notification path, and Ollama status (models, context limits). An
     unavailable Ollama only disables healing; it never blocks runs."""
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "starting_url": {"url": cfg.get("starting_url"), "ok": False},
         "smtp": _check_smtp(cfg),
         "ollama": _check_ollama(cfg),

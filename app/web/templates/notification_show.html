@@ -1,31 +1,30 @@
 {% extends "base.html" %}
+{% import "_components.html" as c %}
+{% block header %}{{ '🔴' if n.severity == 'error' else '⚠️' }} {{ n.title }}{% endblock %}
 {% block content %}
-<div class="flex items-center justify-between mb-4">
-  <h1 class="text-xl font-bold flex items-center gap-2">
-    <span>{{ '🔴' if n.severity == 'error' else '⚠️' }}</span> {{ n.title }}
-  </h1>
-  <a href="/notifications" class="text-slate-500 hover:underline">&larr; Back</a>
+<div class="mb-4 flex justify-end">
+  <a href="/notifications" class="{{ c.muted() }} hover:underline">&larr; Back</a>
 </div>
 
-<section class="bg-white rounded-lg border border-slate-200 p-5">
-  <div class="text-sm text-slate-500 mb-4 flex flex-wrap gap-x-6 gap-y-1">
+<section class="{{ c.section_cls() }} p-6">
+  <div class="mb-4 flex flex-wrap gap-x-6 gap-y-1 text-sm {{ c.muted() }}">
     <span>Kind: <span class="font-mono">{{ n.kind }}</span></span>
     <span>Severity: {{ n.severity }}</span>
     <span>Created: {{ n.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</span>
     {% if n.read_at %}<span>Read: {{ n.read_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</span>{% endif %}
   </div>
   {% if n.body %}
-  <pre class="text-sm bg-slate-50 border border-slate-200 rounded p-3 whitespace-pre-wrap">{{ n.body }}</pre>
+  <pre class="whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-sm ring-1 ring-gray-950/5 dark:bg-white/5 dark:ring-white/10">{{ n.body }}</pre>
   {% endif %}
   <div class="mt-4 flex gap-4 text-sm">
     {% if n.run_id %}
-    <a href="/runs/{{ n.run_id }}" class="text-blue-700 hover:underline">Run detail &rarr;</a>
+    <a href="/runs/{{ n.run_id }}" class="{{ c.link_cls() }}">Run detail &rarr;</a>
     {% if has_report %}
-    <a href="/artifacts/{{ n.run_id }}/report.html" class="text-blue-700 hover:underline">Artifact report &rarr;</a>
+    <a href="/artifacts/{{ n.run_id }}/report.html" class="{{ c.link_cls() }}">Artifact report &rarr;</a>
     {% endif %}
     {% endif %}
     {% if n.schedule_id %}
-    <a href="/schedules" class="text-blue-700 hover:underline">Schedules &rarr;</a>
+    <a href="/schedules" class="{{ c.link_cls() }}">Schedules &rarr;</a>
     {% endif %}
   </div>
 </section>

@@ -86,7 +86,7 @@ def test_run_against_dead_port_gets_friendly_summary(tmp_path):
     friendly summary alongside the full traceback (spec §5)."""
     from pathlib import Path
 
-    from app.db import init_db, Run
+    from app.db import Run, init_db
     from app.runner.executor import run_test
     from app.schemas import load_test
 

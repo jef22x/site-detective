@@ -1,50 +1,65 @@
 {% extends "base.html" %}
+{% import "_components.html" as c %}
+{% block header %}Run history{% endblock %}
 {% block content %}
-<h1 class="text-xl font-bold mb-4">Run history</h1>
-
-<section class="bg-white rounded-lg border border-slate-200 p-5">
+<section class="{{ c.section_cls() }} overflow-hidden">
   <div class="overflow-x-auto">
   <table class="w-full text-sm">
-    <thead><tr class="text-left text-slate-500 border-b">
-      <th class="py-2">Run ID</th><th>Test</th><th>Status</th><th>Started</th><th>Duration</th></tr></thead>
-    <tbody id="run-history">
+    <thead><tr class="border-b border-gray-200 dark:border-white/10">
+      <th class="{{ c.th_cls() }}">Run ID</th><th class="{{ c.th_cls() }}">Test</th>
+      <th class="{{ c.th_cls() }}">Status</th><th class="{{ c.th_cls() }}">Started</th>
+      <th class="{{ c.th_cls() }}">Duration</th></tr></thead>
+    <tbody id="run-history" class="{{ c.divide_cls() }}">
       {% for r in runs %}
-      <tr data-run="{{ r.id }}" class="border-b border-slate-100 hover:bg-slate-50">
-        <td class="py-2"><a class="text-blue-700 hover:underline font-mono text-xs"
+      <tr data-run="{{ r.id }}" class="hover:bg-gray-50 dark:hover:bg-white/5 {% if r.status not in ('passed', 'running', 'skipped') %}border-l-2 border-l-danger-500{% endif %}">
+        <td class="px-4 py-3"><a class="{{ c.link_cls() }} font-mono text-xs"
                href="/runs/{{ r.id }}">{{ r.id[:12] }}…</a></td>
-        <td>{% if r.test_id in test_names %}<a class="text-blue-700 hover:underline" href="/tests/{{ r.test_id }}">{{ test_names[r.test_id] }}</a>
+        <td class="px-4 py-3">{% if r.test_id in test_names %}<a class="{{ c.link_cls() }}" href="/tests/{{ r.test_id }}">{{ test_names[r.test_id] }}</a>
             {% else %}{{ r.test_id }}{% endif %}
           {% if r.trigger == 'scheduled' %}<span title="Started by a schedule">🕐</span>{% endif %}</td>
-        <td><span class="px-2 py-0.5 rounded-full text-white text-xs
-          {% if r.status == 'passed' %}bg-green-600{% elif r.status == 'running' %}bg-blue-600
-          {% elif r.status == 'skipped' %}bg-slate-500
-          {% else %}bg-red-600{% endif %}">{{ r.status }}</span></td>
-        <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-        <td class="text-slate-500">{{ r.duration or '—' }}</td>
+        <td class="px-4 py-3">{{ c.status_badge(r.status) }}
+          {% if r.diag %}<span class="ml-1">{{ c.badge('⚠ ' ~ (r.diag.errors + r.diag.failed), 'warning', 'Page diagnostics found issues on this run') }}</span>{% endif %}</td>
+        <td class="px-4 py-3 font-mono text-xs">{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td class="px-4 py-3 font-mono text-xs {{ c.muted() }}">{{ r.duration or '—' }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="py-4 text-slate-500">No runs yet.</td></tr>
+      <tr><td colspan="5" class="px-4 py-4 {{ c.muted() }}">No runs yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
   </div>
   {% if runs_total > runs | length %}
   <button id="load-more" onclick="loadMoreRuns()"
-    class="mt-3 text-blue-700 hover:underline text-sm">
+    class="{{ c.link_cls() }} px-4 py-3 text-sm">
     Load 20 more ({{ runs_total - runs | length }} remaining)</button>
   {% endif %}
 </section>
 
-<div id="toast" class="hidden fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded shadow-lg"></div>
+<div id="toast" class="hidden fixed bottom-6 right-6 {{ c.toast_ok() }}"></div>
 <script>
+const TOAST_OK = '{{ c.toast_ok() }}';
+const TOAST_ERR = '{{ c.toast_ok() }} text-danger-600 dark:text-danger-400';
 function toast(msg, isError) {
   const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'fixed bottom-6 right-6 text-white px-4 py-2 rounded shadow-lg ' +
-                 (isError ? 'bg-red-600' : 'bg-slate-900');
+  el.textContent = (isError ? '✕ ' : '✓ ') + msg;
+  el.className = 'fixed bottom-6 right-6 ' + (isError ? TOAST_ERR : TOAST_OK);
   setTimeout(() => el.classList.add('hidden'), 4000);
 }
-const STATUS_BG = {passed: 'bg-green-600', running: 'bg-blue-600', skipped: 'bg-slate-500'};
+const BADGE_BASE = 'inline-flex items-center whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ';
+const TONE_CLS = {
+  success: 'bg-success-50 text-success-700 ring-success-600/20 dark:bg-success-400/10 dark:text-success-400 dark:ring-success-400/30',
+  warning: 'bg-warning-50 text-warning-700 ring-warning-600/20 dark:bg-warning-400/10 dark:text-warning-400 dark:ring-warning-400/30',
+  danger: 'bg-danger-50 text-danger-700 ring-danger-600/20 dark:bg-danger-400/10 dark:text-danger-400 dark:ring-danger-400/30',
+  info: 'bg-info-50 text-info-700 ring-info-600/20 dark:bg-info-400/10 dark:text-info-400 dark:ring-info-400/30',
+  gray: 'bg-gray-50 text-gray-700 ring-gray-600/20 dark:bg-gray-400/10 dark:text-gray-400 dark:ring-gray-400/30',
+};
+const STATUS_TONE = {passed: 'success', healed_then_passed: 'warning', running: 'info', queued: 'info', skipped: 'gray', skipped_busy: 'gray'};
+function statusBadge(status) {
+  const badge = document.createElement('span');
+  badge.className = BADGE_BASE + TONE_CLS[STATUS_TONE[status] || 'danger'];
+  badge.textContent = status.replaceAll('_', ' ');
+  return badge;
+}
 async function loadMoreRuns() {
   const tbody = document.getElementById('run-history');
   const btn = document.getElementById('load-more');
@@ -57,20 +72,22 @@ async function loadMoreRuns() {
     for (const run of data.runs) {
       const tr = document.createElement('tr');
       tr.dataset.run = run.id;
-      tr.className = 'border-b border-slate-100 hover:bg-slate-50';
+      tr.className = 'hover:bg-gray-50 dark:hover:bg-white/5' +
+        (STATUS_TONE[run.status] ? '' : ' border-l-2 border-l-danger-500');
 
       const runIdTd = document.createElement('td');
-      runIdTd.className = 'py-2';
+      runIdTd.className = 'px-4 py-3';
       const runLink = document.createElement('a');
-      runLink.className = 'text-blue-700 hover:underline font-mono text-xs';
+      runLink.className = 'font-medium text-primary-600 hover:underline dark:text-primary-400 font-mono text-xs';
       runLink.href = `/runs/${encodeURIComponent(run.id)}`;
       runLink.textContent = run.id.slice(0, 12) + '…';
       runIdTd.appendChild(runLink);
 
       const testTd = document.createElement('td');
+      testTd.className = 'px-4 py-3';
       if (run.test_exists) {
         const testLink = document.createElement('a');
-        testLink.className = 'text-blue-700 hover:underline';
+        testLink.className = 'font-medium text-primary-600 hover:underline dark:text-primary-400';
         testLink.href = `/tests/${encodeURIComponent(run.test_id)}`;
         testLink.textContent = run.test_name;
         testTd.appendChild(testLink);
@@ -80,16 +97,22 @@ async function loadMoreRuns() {
       if (run.trigger === 'scheduled') testTd.appendChild(document.createTextNode(' 🕐'));
 
       const statusTd = document.createElement('td');
-      const badge = document.createElement('span');
-      badge.className = `px-2 py-0.5 rounded-full text-white text-xs ${STATUS_BG[run.status] || 'bg-red-600'}`;
-      badge.textContent = run.status;
-      statusTd.appendChild(badge);
+      statusTd.className = 'px-4 py-3';
+      statusTd.appendChild(statusBadge(run.status));
+      if (run.diag) {
+        const diagBadge = document.createElement('span');
+        diagBadge.className = 'ml-1 ' + BADGE_BASE + TONE_CLS.warning;
+        diagBadge.title = 'Page diagnostics found issues on this run';
+        diagBadge.textContent = `⚠ ${run.diag.errors + run.diag.failed}`;
+        statusTd.appendChild(diagBadge);
+      }
 
       const startedTd = document.createElement('td');
+      startedTd.className = 'px-4 py-3 font-mono text-xs';
       startedTd.textContent = run.started_at;
 
       const durationTd = document.createElement('td');
-      durationTd.className = 'text-slate-500';
+      durationTd.className = 'px-4 py-3 font-mono text-xs text-gray-500 dark:text-gray-400';
       durationTd.textContent = run.duration || '—';
 
       tr.append(runIdTd, testTd, statusTd, startedTd, durationTd);

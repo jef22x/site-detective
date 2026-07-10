@@ -20,10 +20,22 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "httpx>=0.27"]
+dev = ["pytest>=8.0", "httpx>=0.27", "ruff>=0.5"]
 
 [project.scripts]
 sitedetective = "app.main:serve"
 
 [tool.setuptools]
 packages = ["app", "app.runner", "app.reports", "app.web"]
+
+[tool.setuptools.package-data]
+"app.runner" = ["vendor/*.js"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [".venv", ".claude", "unit_tests/fixtures"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+ignore = ["B008"]  # FastAPI's Form(...)/Depends(...) default-call idiom

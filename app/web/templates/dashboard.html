@@ -1,45 +1,48 @@
 {% extends "base.html" %}
+{% import "_components.html" as c %}
+{% block header %}Dashboard{% endblock %}
 {% block content %}
-<div class="grid md:grid-cols-2 gap-6">
-  <section class="bg-white rounded-lg border border-slate-200 p-5">
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="font-semibold text-lg">Tests</h2>
-      <a href="/tests/new" class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-1.5 rounded">+ New Test</a>
+<div class="grid gap-6 md:grid-cols-2">
+  <section class="{{ c.section_cls() }} p-6">
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-base font-semibold">Tests</h2>
+      <a href="/tests/new" class="{{ c.btn_primary() }}">+ New Test</a>
     </div>
+    <div class="{{ c.divide_cls() }}">
     {% for t in tests %}
-    <div class="flex items-center justify-between py-2 border-b border-slate-100">
+    <div class="flex items-center justify-between py-2.5">
       {% if t.valid %}
-      <a class="text-blue-700 hover:underline" href="/tests/{{ t.id }}">{{ t.name }}</a>
+      <a class="{{ c.link_cls() }}" href="/tests/{{ t.id }}">{{ t.name }}</a>
       {% else %}
-      <span class="text-slate-500" title="{{ t.error }}">{{ t.name }}
-        <span class="ml-1 text-xs bg-amber-100 text-amber-800 border border-amber-300 rounded px-1.5 py-0.5 cursor-help">invalid</span></span>
+      <span class="{{ c.muted() }}" title="{{ t.error }}">{{ t.name }}
+        <span class="ml-1 cursor-help">{{ c.badge('invalid', 'warning') }}</span></span>
       {% endif %}
       <form method="post" action="/run">
         <input type="hidden" name="test" value="{{ t.file }}">
-        <button class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-3 py-1 rounded disabled:opacity-50"
+        <button class="{{ c.btn_success() }} px-2.5 py-1.5"
                 {% if t.id in live.test_ids or not t.valid %}disabled{% endif %}>Run</button>
       </form>
     </div>
     {% else %}
-    <div class="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded p-4">
-      <p class="font-medium text-slate-800 mb-2">Welcome! Get started in three steps:</p>
-      <ol class="list-decimal list-inside space-y-1 mb-3">
-        <li>Set your <a href="/config" class="text-blue-700 hover:underline">starting URL</a> — the site your tests will check.</li>
-        <li><a href="/tests/new" class="text-blue-700 hover:underline">Create a test</a> — a series of steps like “click”, “type”, and “check element”.</li>
-        <li>Press <span class="font-medium">Run</span> and watch the results appear below.</li>
+    <div class="rounded-lg bg-gray-50 p-4 text-sm {{ c.muted() }} dark:bg-white/5">
+      <p class="mb-2 font-medium text-gray-950 dark:text-white">Welcome! Get started in three steps:</p>
+      <ol class="mb-3 list-inside list-decimal space-y-1">
+        <li>Set your <a href="/config" class="{{ c.link_cls() }}">starting URL</a> — the site your tests will check.</li>
+        <li><a href="/tests/new" class="{{ c.link_cls() }}">Create a test</a> — a series of steps like “click”, “type”, and “check element”.</li>
+        <li>Press <span class="font-medium text-gray-950 dark:text-white">Run</span> and watch the results appear below.</li>
       </ol>
-      <button onclick="createExample()"
-        class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-1.5 rounded">
+      <button onclick="createExample()" class="{{ c.btn_primary() }}">
         Create an example test for me</button>
     </div>
     {% endfor %}
+    </div>
   </section>
 
-  <section class="bg-white rounded-lg border border-slate-200 p-5">
-    <h2 class="font-semibold text-lg mb-3">Environment</h2>
-    <div id="env" class="text-sm text-slate-600">Checking…</div>
-    <p class="text-xs text-slate-500 mt-2">The default starting URL is the site your tests run against — every run opens it
-      first. Change it in <a href="/config" class="text-blue-700 hover:underline">Config</a>, or override it per test.</p>
+  <section class="{{ c.section_cls() }} p-6">
+    <h2 class="mb-4 text-base font-semibold">Environment</h2>
+    <div id="env" class="text-sm {{ c.muted() }}">Checking…</div>
+    <p class="mt-3 text-sm {{ c.muted() }}">The default starting URL is the site your tests run against — every run opens it
+      first. Change it in <a href="/config" class="{{ c.link_cls() }}">Config</a>, or override it per test.</p>
     <script>
       fetch('/api/env').then(r => r.json()).then(e => {
         const b = (ok) => ok ? '✅' : '❌';
@@ -87,21 +90,24 @@
 </div>
 
 {% if live.runs %}
-<section class="bg-white rounded-lg border border-slate-200 p-5 mt-6">
-  <h2 class="font-semibold text-lg mb-3">Active runs ({{ live.active }}/{{ live.slots }} slots)</h2>
-  <table class="w-full text-sm">
-    <thead><tr class="text-left text-slate-500 border-b">
-      <th class="py-2">Run ID</th><th>Test</th><th>Progress</th><th>Last step</th><th>Status</th></tr></thead>
-    <tbody>
+<section class="{{ c.section_cls() }} mt-6 overflow-hidden">
+  <h2 class="px-6 pt-6 text-base font-semibold">Active runs ({{ live.active }}/{{ live.slots }} slots)</h2>
+  <table class="mt-4 w-full text-sm {{ c.divide_cls() }}">
+    <thead><tr>
+      <th class="{{ c.th_cls() }}">Run ID</th><th class="{{ c.th_cls() }}">Test</th>
+      <th class="{{ c.th_cls() }}">Progress</th><th class="{{ c.th_cls() }}">Last step</th>
+      <th class="{{ c.th_cls() }}">Status</th></tr></thead>
+    <tbody class="{{ c.divide_cls() }}">
       {% for r in live.runs %}
-      <tr class="border-b border-slate-100">
-        <td class="py-2"><a class="text-blue-700 hover:underline font-mono text-xs"
+      <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
+        <td class="px-4 py-3"><a class="{{ c.link_cls() }} font-mono text-xs"
                href="/runs/{{ r.run_id }}">{{ r.run_id[:12] }}…</a></td>
-        <td>{% if r.test_id in test_names %}<a class="text-blue-700 hover:underline" href="/tests/{{ r.test_id }}">{{ r.test_name }}</a>
+        <td class="px-4 py-3">{% if r.test_id in test_names %}<a class="{{ c.link_cls() }}" href="/tests/{{ r.test_id }}">{{ r.test_name }}</a>
             {% else %}{{ r.test_name }}{% endif %}</td>
-        <td>{{ r.done }}/{{ r.total }}</td>
-        <td class="text-slate-500">{{ r.last_step or '—' }}</td>
-        <td><span class="px-2 py-0.5 rounded-full text-white text-xs bg-blue-600">{{ r.status }}</span></td>
+        <td class="px-4 py-3 font-mono text-xs">{{ r.done }}/{{ r.total }}</td>
+        <td class="px-4 py-3 {{ c.muted() }}">{{ r.last_step or '—' }}</td>
+        <td class="px-4 py-3"><span class="inline-flex items-center gap-1.5">
+          <span class="size-2 animate-pulse rounded-full bg-info-500"></span>{{ c.status_badge(r.status) }}</span></td>
       </tr>
       {% endfor %}
     </tbody>
@@ -109,32 +115,31 @@
 </section>
 {% endif %}
 
-<section class="bg-white rounded-lg border border-slate-200 p-5 mt-6">
-  <div class="flex items-center justify-between mb-3">
-    <h2 class="font-semibold text-lg">Run history</h2>
-    <a href="/runs" class="text-blue-700 hover:underline text-sm">View all runs &rarr;</a>
+<section class="{{ c.section_cls() }} mt-6 overflow-hidden">
+  <div class="flex items-center justify-between px-6 pt-6">
+    <h2 class="text-base font-semibold">Run history</h2>
+    <a href="/runs" class="{{ c.link_cls() }} text-sm">View all runs &rarr;</a>
   </div>
-  <div class="overflow-x-auto">
+  <div class="mt-4 overflow-x-auto">
   <table class="w-full text-sm">
-    <thead><tr class="text-left text-slate-500 border-b">
-      <th class="py-2">Run ID</th><th>Test</th><th>Status</th><th>Started</th><th>Duration</th></tr></thead>
-    <tbody>
+    <thead><tr class="border-b border-gray-200 dark:border-white/10">
+      <th class="{{ c.th_cls() }}">Run ID</th><th class="{{ c.th_cls() }}">Test</th>
+      <th class="{{ c.th_cls() }}">Status</th><th class="{{ c.th_cls() }}">Started</th>
+      <th class="{{ c.th_cls() }}">Duration</th></tr></thead>
+    <tbody class="{{ c.divide_cls() }}">
       {% for r in runs %}
-      <tr class="border-b border-slate-100 hover:bg-slate-50">
-        <td class="py-2"><a class="text-blue-700 hover:underline font-mono text-xs"
+      <tr class="hover:bg-gray-50 dark:hover:bg-white/5">
+        <td class="px-4 py-3"><a class="{{ c.link_cls() }} font-mono text-xs"
                href="/runs/{{ r.id }}">{{ r.id[:12] }}…</a></td>
-        <td>{% if r.test_id in test_names %}<a class="text-blue-700 hover:underline" href="/tests/{{ r.test_id }}">{{ test_names[r.test_id] }}</a>
+        <td class="px-4 py-3">{% if r.test_id in test_names %}<a class="{{ c.link_cls() }}" href="/tests/{{ r.test_id }}">{{ test_names[r.test_id] }}</a>
             {% else %}{{ r.test_id }}{% endif %}
           {% if r.trigger == 'scheduled' %}<span title="Started by a schedule">🕐</span>{% endif %}</td>
-        <td><span class="px-2 py-0.5 rounded-full text-white text-xs
-          {% if r.status == 'passed' %}bg-green-600{% elif r.status == 'running' %}bg-blue-600
-          {% elif r.status == 'skipped' %}bg-slate-500
-          {% else %}bg-red-600{% endif %}">{{ r.status }}</span></td>
-        <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-        <td class="text-slate-500">{{ r.duration or '—' }}</td>
+        <td class="px-4 py-3">{{ c.status_badge(r.status) }}</td>
+        <td class="px-4 py-3 font-mono text-xs">{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td class="px-4 py-3 font-mono text-xs {{ c.muted() }}">{{ r.duration or '—' }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="py-4 text-slate-500">No runs yet.</td></tr>
+      <tr><td colspan="5" class="px-4 py-4 {{ c.muted() }}">No runs yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -7,7 +7,6 @@ from app.runner.executor import run_test
 from app.runner.steplog import StepLog
 from app.schemas import Defaults, Step, TestBody, TestDefinition
 
-
 # ---- StepLog unit tests ----
 
 def test_steplog_entries_are_ordered_and_truncated():
@@ -144,7 +143,8 @@ def _healing_test() -> TestDefinition:
 def test_accepted_heal_is_logged(mock_shop_server, tmp_path, monkeypatch):
     monkeypatch.setattr(healing, "propose_selector",
                         lambda intent, chunk, i, n, cfg: "button.add_to_basket_btn")
-    cfg = {"starting_url": mock_shop_server, "ollama": {"enabled": True, "model": "mock"}}
+    cfg = {"starting_url": mock_shop_server,
+           "ollama": {"enabled": True, "model": "mock", "strategy": "generate"}}
     session_factory = init_db(tmp_path / "autoqa.db")
 
     outcome = run_test(_healing_test(), cfg, session_factory, tmp_path / "reports")
@@ -152,7 +152,7 @@ def test_accepted_heal_is_logged(mock_shop_server, tmp_path, monkeypatch):
 
     entries, msgs = _kinds_msgs(session_factory, outcome.run_id, 1)
     joined = "\n".join(msgs)
-    assert "asking AI to locate" in joined and "The Add to Cart button" in joined
+    assert "attempting to relocate" in joined and "The Add to Cart button" in joined
     assert "AI (mock) proposed `button.add_to_basket_btn`" in joined
     assert "Healed: retried with `button.add_to_basket_btn` — passed" in joined
     assert any(e["kind"] == "healing" for e in entries)
@@ -161,7 +161,8 @@ def test_accepted_heal_is_logged(mock_shop_server, tmp_path, monkeypatch):
 def test_no_proposal_logs_giving_up(mock_shop_server, tmp_path, monkeypatch):
     monkeypatch.setattr(healing, "propose_selector",
                         lambda intent, chunk, i, n, cfg: None)
-    cfg = {"starting_url": mock_shop_server, "ollama": {"enabled": True, "model": "mock"}}
+    cfg = {"starting_url": mock_shop_server,
+           "ollama": {"enabled": True, "model": "mock", "strategy": "generate"}}
     session_factory = init_db(tmp_path / "autoqa.db")
 
     outcome = run_test(_healing_test(), cfg, session_factory, tmp_path / "reports")
@@ -174,7 +175,8 @@ def test_no_proposal_logs_giving_up(mock_shop_server, tmp_path, monkeypatch):
 def test_rejected_candidate_is_logged(mock_shop_server, tmp_path, monkeypatch):
     monkeypatch.setattr(healing, "propose_selector",
                         lambda intent, chunk, i, n, cfg: "#nope-not-here")
-    cfg = {"starting_url": mock_shop_server, "ollama": {"enabled": True, "model": "mock"}}
+    cfg = {"starting_url": mock_shop_server,
+           "ollama": {"enabled": True, "model": "mock", "strategy": "generate"}}
     session_factory = init_db(tmp_path / "autoqa.db")
 
     outcome = run_test(_healing_test(), cfg, session_factory, tmp_path / "reports")

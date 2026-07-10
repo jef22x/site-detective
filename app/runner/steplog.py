@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Dict, List
+from typing import Any
 
 from ..config import mask_secrets
 
@@ -21,10 +21,10 @@ _MAX_MSG = 200
 
 
 class StepLog:
-    def __init__(self, cfg: Dict[str, Any]) -> None:
+    def __init__(self, cfg: dict[str, Any]) -> None:
         self._start = time.monotonic()
         self._cfg = cfg
-        self.entries: List[dict] = []
+        self.entries: list[dict] = []
 
     def add(self, kind: str, msg: str) -> None:
         """Append an entry; swallows any error — logging must never

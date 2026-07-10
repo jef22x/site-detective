@@ -1,26 +1,86 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SiteDetective</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-slate-50 text-slate-900">
-  <nav class="bg-slate-900 text-white px-6 py-3 flex gap-6 items-center">
-    <a href="/" class="font-bold text-lg">SiteDetective</a>
-    <a href="/tests" class="hover:text-amber-300">Tests</a>
-    <a href="/runs" class="hover:text-amber-300">Runs</a>
-    <a href="/schedules" class="hover:text-amber-300">Schedules</a>
-    <a href="/config" class="hover:text-amber-300">Config</a>
-    <span id="live" class="ml-auto text-sm text-slate-300"></span>
-    <a href="/notifications" class="relative hover:text-amber-300" title="Notifications">
-      🔔<span id="bell-count" class="hidden absolute -top-1.5 -right-2 bg-red-600 text-white text-xs rounded-full px-1.5"></span>
-    </a>
-  </nav>
-  <main class="max-w-5xl mx-auto p-6">
-    {% block content %}{% endblock %}
-  </main>
   <script>
+    // Runs before first paint: explicit choice in localStorage wins,
+    // otherwise follow the system preference.
+    (function () {
+      const t = localStorage.theme;
+      document.documentElement.classList.toggle('dark',
+        t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches));
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/tailwind.css">
+</head>
+{% import "_icons.html" as i %}
+<body class="bg-gray-50 text-gray-950 antialiased dark:bg-gray-950 dark:text-white">
+
+  <!-- Mobile backdrop for the slide-over sidebar -->
+  <div id="sidebar-backdrop" onclick="toggleSidebar(false)"
+       class="fixed inset-0 z-30 hidden bg-gray-950/50 lg:hidden"></div>
+
+  <aside id="sidebar"
+         class="fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col bg-white ring-1 ring-gray-950/5 transition-transform lg:translate-x-0 dark:bg-gray-900 dark:ring-white/10">
+    <div class="flex h-16 items-center px-6">
+      <a href="/" class="text-xl font-bold tracking-tight">SiteDetective</a>
+    </div>
+    <nav class="flex-1 space-y-1 px-3 py-2">
+      {% set path = request.url.path %}
+      {% for href, label, ic in [
+        ('/', 'Dashboard', 'home'),
+        ('/tests', 'Tests', 'beaker'),
+        ('/runs', 'Runs', 'play'),
+        ('/schedules', 'Schedules', 'clock'),
+        ('/notifications', 'Notifications', 'bell'),
+        ('/config', 'Config', 'cog'),
+      ] %}
+      {% set active = path == href or (href != '/' and path.startswith(href + '/')) %}
+      <a href="{{ href }}"
+         class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium {% if active %}bg-gray-100 text-primary-600 dark:bg-white/5 dark:text-primary-400{% else %}text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-white/5{% endif %}">
+        {{ i.icon(ic) }} {{ label }}
+      </a>
+      {% endfor %}
+    </nav>
+  </aside>
+
+  <div class="lg:pl-64">
+    <header class="sticky top-0 z-20 flex h-16 items-center gap-4 bg-gray-50/80 px-6 backdrop-blur lg:px-8 dark:bg-gray-950/80">
+      <button onclick="toggleSidebar()" class="text-gray-500 hover:text-gray-950 lg:hidden dark:hover:text-white" title="Menu">
+        {{ i.icon('bars', 'size-6') }}
+      </button>
+      <div class="min-w-0 text-2xl font-bold tracking-tight">{% block header %}{% endblock %}</div>
+      <span id="live" class="ml-auto line-clamp-1 min-w-0 text-sm text-gray-500 dark:text-gray-400"></span>
+      <button onclick="toggleTheme()" class="shrink-0 text-gray-500 hover:text-gray-950 dark:hover:text-white" title="Toggle theme">
+        <span class="dark:hidden">{{ i.icon('moon') }}</span>
+        <span class="hidden dark:inline">{{ i.icon('sun') }}</span>
+      </button>
+      <a href="/notifications" class="relative shrink-0 text-gray-500 hover:text-gray-950 dark:hover:text-white" title="Notifications">
+        {{ i.icon('bell', 'size-6') }}
+        <span id="bell-count" class="absolute -top-1.5 -right-2 hidden rounded-full bg-danger-600 px-1.5 text-xs text-white"></span>
+      </a>
+    </header>
+
+    <main class="mx-auto max-w-7xl p-6 lg:p-8">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script>
+    function toggleSidebar(open) {
+      const sb = document.getElementById('sidebar');
+      const bd = document.getElementById('sidebar-backdrop');
+      const show = open !== undefined ? open : sb.classList.contains('-translate-x-full');
+      sb.classList.toggle('-translate-x-full', !show);
+      bd.classList.toggle('hidden', !show);
+    }
+    function toggleTheme() {
+      const dark = !document.documentElement.classList.contains('dark');
+      document.documentElement.classList.toggle('dark', dark);
+      localStorage.theme = dark ? 'dark' : 'light';
+    }
     async function poll() {
       try {
         const s = await (await fetch('/api/status')).json();

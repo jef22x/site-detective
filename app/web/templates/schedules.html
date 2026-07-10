@@ -1,88 +1,85 @@
 {% extends "base.html" %}
+{% import "_components.html" as c %}
+{% block header %}Schedules{% endblock %}
 {% block content %}
-<div class="flex items-center justify-between mb-4">
-  <h1 class="text-xl font-bold">Schedules</h1>
+<div class="mb-4 flex justify-end">
   <button onclick="document.getElementById('add-form').classList.toggle('hidden')"
-    class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-1.5 rounded">+ Add Schedule</button>
+    class="{{ c.btn_primary() }}">+ Add Schedule</button>
 </div>
 
-<section id="add-form" class="hidden bg-white rounded-lg border border-slate-200 p-5 mb-6">
-  <h2 class="font-semibold mb-3">New schedule</h2>
-  <div class="grid sm:grid-cols-2 gap-4 text-sm">
-    <label class="block">Test
-      <select id="f-test" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5">
+<section id="add-form" class="hidden {{ c.section_cls() }} mb-6 p-6">
+  <h2 class="mb-4 text-base font-semibold">New schedule</h2>
+  <div class="grid gap-4 text-sm sm:grid-cols-2">
+    <label class="{{ c.label_cls() }}">Test
+      <select id="f-test" class="{{ c.input_cls() }} mt-1 w-full">
         {% for t in tests %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
       </select>
     </label>
-    <label class="block">Cadence
-      <select id="f-kind" onchange="kindChanged()" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5">
+    <label class="{{ c.label_cls() }}">Cadence
+      <select id="f-kind" onchange="kindChanged()" class="{{ c.input_cls() }} mt-1 w-full">
         <option value="interval">Every N minutes</option>
         <option value="daily">Daily at time</option>
         <option value="cron">Cron expression</option>
       </select>
     </label>
-    <label class="block" id="p-interval">Every (minutes, 5–10080)
+    <label class="{{ c.label_cls() }}" id="p-interval">Every (minutes, 5–10080)
       <input id="f-minutes" type="number" min="5" max="10080" value="30"
-        oninput="previewFirings()" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5">
+        oninput="previewFirings()" class="{{ c.input_cls() }} mt-1 w-full">
     </label>
-    <label class="block hidden" id="p-daily">At (HH:MM, server local time)
+    <label class="{{ c.label_cls() }} hidden" id="p-daily">At (HH:MM, server local time)
       <input id="f-time" type="time" value="06:00"
-        oninput="previewFirings()" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5">
+        oninput="previewFirings()" class="{{ c.input_cls() }} mt-1 w-full">
     </label>
-    <label class="block hidden" id="p-cron">Cron (5 fields, e.g. <code>0 6 * * 1-5</code>)
+    <label class="{{ c.label_cls() }} hidden" id="p-cron">Cron (5 fields, e.g. <code>0 6 * * 1-5</code>)
       <input id="f-cron" type="text" placeholder="0 6 * * 1-5"
-        oninput="previewFirings()" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 font-mono">
+        oninput="previewFirings()" class="{{ c.input_cls() }} mt-1 w-full font-mono">
     </label>
   </div>
-  <p id="preview" class="text-sm text-slate-500 mt-3"></p>
-  <p id="form-error" class="text-sm text-red-600 mt-1"></p>
-  <button onclick="createSchedule()"
-    class="mt-3 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded font-medium">Save schedule</button>
+  <p id="preview" class="mt-3 text-sm {{ c.muted() }}"></p>
+  <p id="form-error" class="mt-1 text-sm text-danger-600 dark:text-danger-400"></p>
+  <button onclick="createSchedule()" class="{{ c.btn_primary() }} mt-4">Save schedule</button>
 </section>
 
-<section class="bg-white rounded-lg border border-slate-200 p-5">
+<section class="{{ c.section_cls() }} overflow-hidden">
   <div class="overflow-x-auto">
   <table class="w-full text-sm">
-    <thead><tr class="text-left text-slate-500 border-b">
-      <th class="py-2">Test</th><th>Cadence</th><th>Next run (UTC)</th>
-      <th>Last result</th><th>Enabled</th><th></th></tr></thead>
-    <tbody>
+    <thead><tr class="border-b border-gray-200 dark:border-white/10">
+      <th class="{{ c.th_cls() }}">Test</th><th class="{{ c.th_cls() }}">Cadence</th>
+      <th class="{{ c.th_cls() }}">Next run (UTC)</th><th class="{{ c.th_cls() }}">Last result</th>
+      <th class="{{ c.th_cls() }}">Enabled</th><th class="{{ c.th_cls() }}"></th></tr></thead>
+    <tbody class="{{ c.divide_cls() }}">
       {% for s in schedules %}
-      <tr class="border-b border-slate-100 hover:bg-slate-50 {% if not s.enabled %}opacity-60{% endif %}">
-        <td class="py-2"><a class="text-blue-700 hover:underline" href="/tests/{{ s.test_id }}">{{ s.test_id }}</a></td>
-        <td {% if s.kind == 'cron' %}class="font-mono text-xs" title="server local time"{% endif %}>{{ s.cadence }}</td>
-        <td class="text-slate-500">{{ s.next_run_at or '—' }}</td>
-        <td>
-          {% if s.last_result %}
-          <span class="px-2 py-0.5 rounded-full text-xs
-            {% if s.last_result == 'passed' %}bg-green-600 text-white
-            {% elif s.last_result == 'skipped_busy' %}bg-slate-400 text-white
-            {% else %}bg-red-600 text-white{% endif %}">{{ s.last_result }}</span>
-          {% else %}<span class="text-slate-400">—</span>{% endif %}
+      <tr class="hover:bg-gray-50 dark:hover:bg-white/5 {% if not s.enabled %}opacity-60{% endif %}">
+        <td class="px-4 py-3"><a class="{{ c.link_cls() }}" href="/tests/{{ s.test_id }}">{{ s.test_id }}</a></td>
+        <td class="px-4 py-3 font-mono text-xs"{% if s.kind == 'cron' %} title="server local time"{% endif %}>{{ s.cadence }}</td>
+        <td class="px-4 py-3 font-mono text-xs {{ c.muted() }}">{{ s.next_run_at or '—' }}</td>
+        <td class="px-4 py-3">
+          {% if s.last_result %}{{ c.status_badge(s.last_result) }}
+          {% else %}<span class="{{ c.muted() }}">—</span>{% endif %}
         </td>
-        <td>
-          <button onclick="toggleSchedule('{{ s.id }}')"
-            class="text-xs px-2 py-0.5 rounded border {% if s.enabled %}bg-emerald-50 border-emerald-400 text-emerald-700{% else %}bg-slate-100 border-slate-300 text-slate-500{% endif %}">
-            {{ 'on' if s.enabled else 'off' }}</button>
+        <td class="px-4 py-3">
+          <button onclick="toggleSchedule('{{ s.id }}')">
+            {% if s.enabled %}{{ c.badge('on', 'success') }}{% else %}{{ c.badge('off', 'gray') }}{% endif %}</button>
         </td>
-        <td><button onclick="deleteSchedule('{{ s.id }}')"
-            class="text-red-600 hover:underline text-xs">Delete</button></td>
+        <td class="px-4 py-3"><button onclick="deleteSchedule('{{ s.id }}')"
+            class="text-xs font-medium text-danger-600 hover:underline dark:text-danger-400">Delete</button></td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="py-4 text-slate-500">No schedules yet.</td></tr>
+      <tr><td colspan="6" class="px-4 py-4 {{ c.muted() }}">No schedules yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
   </div>
 </section>
 
-<div id="toast" class="hidden fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded shadow-lg"></div>
+<div id="toast" class="hidden fixed bottom-6 right-6 {{ c.toast_ok() }}"></div>
 <script>
+const TOAST_OK = '{{ c.toast_ok() }}';
+const TOAST_ERR = '{{ c.toast_ok() }} text-danger-600 dark:text-danger-400';
 function toast(msg, isError) {
   const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'fixed bottom-6 right-6 text-white px-4 py-2 rounded shadow-lg ' +
-                 (isError ? 'bg-red-600' : 'bg-slate-900');
+  el.textContent = (isError ? '✕ ' : '✓ ') + msg;
+  el.className = 'fixed bottom-6 right-6 ' + (isError ? TOAST_ERR : TOAST_OK);
   setTimeout(() => el.classList.add('hidden'), 4000);
 }
 function kindChanged() {
@@ -118,7 +115,9 @@ async function createSchedule() {
       headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
     if (!r.ok) {
       const d = (await r.json()).detail;
-      throw new Error(typeof d === 'string' ? d : JSON.stringify(d));
+      // FastAPI/Pydantic validation errors: [{loc: ["body", "field"], msg: "..."}]
+      throw new Error(typeof d === 'string' ? d :
+        Array.isArray(d) ? d.map(e => e.msg).join('; ') : JSON.stringify(d));
     }
     location.reload();
   } catch (e) { err.textContent = e.message; }

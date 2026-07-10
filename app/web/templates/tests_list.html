@@ -1,59 +1,63 @@
 {% extends "base.html" %}
+{% import "_components.html" as c %}
+{% block header %}Tests{% endblock %}
 {% block content %}
-<div class="flex items-center justify-between mb-4">
-  <h1 class="text-xl font-bold">Tests</h1>
-  <a href="/tests/new" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">+ New Test</a>
+<div class="mb-4 flex justify-end">
+  <a href="/tests/new" class="{{ c.btn_primary() }}">+ New Test</a>
 </div>
 
-<div class="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+<div class="{{ c.section_cls() }} overflow-x-auto">
   <table class="w-full text-sm">
-    <thead><tr class="text-left text-slate-500 border-b">
-      <th class="p-3">Name</th><th>ID</th><th># Steps</th><th>Last modified</th><th class="text-right pr-3">Actions</th>
+    <thead><tr class="border-b border-gray-200 dark:border-white/10">
+      <th class="{{ c.th_cls() }}">Name</th><th class="{{ c.th_cls() }}">ID</th>
+      <th class="{{ c.th_cls() }}"># Steps</th><th class="{{ c.th_cls() }}">Last modified</th>
+      <th class="{{ c.th_cls() }} text-right">Actions</th>
     </tr></thead>
-    <tbody>
+    <tbody class="{{ c.divide_cls() }}">
       {% for t in tests %}
-      <tr class="border-b border-slate-100 hover:bg-slate-50 {% if not t.valid %}opacity-60{% endif %}" data-id="{{ t.id }}">
-        <td class="p-3">
+      <tr class="hover:bg-gray-50 dark:hover:bg-white/5 {% if not t.valid %}opacity-60{% endif %}" data-id="{{ t.id }}">
+        <td class="px-4 py-3">
           {% if t.valid %}
-          <a class="text-blue-700 hover:underline" href="/tests/{{ t.id }}">{{ t.name }}</a>
+          <a class="{{ c.link_cls() }}" href="/tests/{{ t.id }}">{{ t.name }}</a>
           {% else %}
           <span title="{{ t.error }}">{{ t.name }}
-            <span class="ml-1 text-xs bg-amber-100 text-amber-800 border border-amber-300 rounded px-1.5 py-0.5 cursor-help">invalid</span></span>
+            <span class="ml-1 cursor-help">{{ c.badge('invalid', 'warning') }}</span></span>
           {% endif %}
         </td>
-        <td class="font-mono text-xs">{{ t.id or '—' }}</td>
-        <td>{{ t.steps }}</td>
-        <td class="text-slate-500">{{ t.mtime | int | string }}<script>
+        <td class="px-4 py-3 font-mono text-xs {{ c.muted() }}">{{ t.id or '—' }}</td>
+        <td class="px-4 py-3 font-mono text-xs">{{ t.steps }}</td>
+        <td class="px-4 py-3 {{ c.muted() }}">{{ t.mtime | int | string }}<script>
           document.currentScript.parentElement.textContent = new Date({{ t.mtime }} * 1000).toLocaleString();
         </script></td>
-        <td class="text-right pr-3 whitespace-nowrap">
+        <td class="whitespace-nowrap px-4 py-3 text-right">
           {% if t.valid %}
           <button onclick="runTest('{{ t.id }}', this)" {% if t.id in live.test_ids %}disabled{% endif %}
-            class="run-btn bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3 py-1 rounded">Run</button>
-          <a href="/tests/{{ t.id }}/edit" class="text-blue-700 hover:underline ml-2">Edit</a>
-          <button onclick="duplicateTest('{{ t.id }}')" class="text-slate-600 hover:underline ml-2">Duplicate</button>
-          <button onclick="deleteTest('{{ t.id }}', this)" class="text-red-600 hover:underline ml-2">Delete</button>
+            class="run-btn {{ c.btn_success() }} px-2.5 py-1.5">Run</button>
+          <a href="/tests/{{ t.id }}/edit" class="{{ c.link_cls() }} ml-2">Edit</a>
+          <button onclick="duplicateTest('{{ t.id }}')" class="ml-2 {{ c.muted() }} hover:underline">Duplicate</button>
+          <button onclick="deleteTest('{{ t.id }}', this)" class="ml-2 font-medium text-danger-600 hover:underline dark:text-danger-400">Delete</button>
           {% endif %}
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="p-6 text-center text-slate-500">
-        No tests yet. <a href="/tests/new" class="text-blue-700 hover:underline">Create your first test</a>,
-        or <button onclick="createExample()" class="text-blue-700 hover:underline">start from an example</button>.
+      <tr><td colspan="5" class="px-4 py-6 text-center {{ c.muted() }}">
+        No tests yet. <a href="/tests/new" class="{{ c.link_cls() }}">Create your first test</a>,
+        or <button onclick="createExample()" class="{{ c.link_cls() }}">start from an example</button>.
       </td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 
-<div id="toast" class="hidden fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded shadow-lg"></div>
+<div id="toast" class="hidden fixed bottom-6 right-6 {{ c.toast_ok() }}"></div>
 
 <script>
+const TOAST_OK = '{{ c.toast_ok() }}';
+const TOAST_ERR = '{{ c.toast_ok() }} text-danger-600 dark:text-danger-400';
 function toast(msg, isError) {
   const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'fixed bottom-6 right-6 text-white px-4 py-2 rounded shadow-lg ' +
-                 (isError ? 'bg-red-600' : 'bg-slate-900');
+  el.textContent = (isError ? '✕ ' : '✓ ') + msg;
+  el.className = 'fixed bottom-6 right-6 ' + (isError ? TOAST_ERR : TOAST_OK);
   setTimeout(() => el.classList.add('hidden'), 4000);
 }
 async function apiPost(url) {

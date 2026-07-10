@@ -28,7 +28,8 @@ def test_renamed_class_is_healed(mock_shop_server, tmp_path, monkeypatch):
     """(a) renamed class -> healed, written back, audited."""
     monkeypatch.setattr(healing, "propose_selector",
                         lambda intent, chunk, i, n, cfg: "button.add_to_basket_btn")
-    cfg = {"starting_url": mock_shop_server, "ollama": {"enabled": True, "model": "mock"}}
+    cfg = {"starting_url": mock_shop_server,
+           "ollama": {"enabled": True, "model": "mock", "strategy": "generate"}}
     test_def = _healing_test("product_v2.html")
     session_factory = init_db(tmp_path / "autoqa.db")
 
@@ -54,7 +55,8 @@ def test_removed_element_fails_bounded(mock_shop_server, tmp_path, monkeypatch):
         return "button.still_not_there"
 
     monkeypatch.setattr(healing, "propose_selector", bad_proposal)
-    cfg = {"starting_url": mock_shop_server, "ollama": {"enabled": True, "model": "mock"}}
+    cfg = {"starting_url": mock_shop_server,
+           "ollama": {"enabled": True, "model": "mock", "strategy": "generate"}}
     test_def = _healing_test("cart.html")  # no add-to-cart button on the cart page
     session_factory = init_db(tmp_path / "autoqa.db")
 
@@ -97,7 +99,8 @@ def test_element_found_in_second_chunk(mock_shop_server, tmp_path, monkeypatch):
     replies = iter([healing.NOT_IN_CHUNK, "button.add_to_basket_btn"])
     monkeypatch.setattr(healing, "propose_selector",
                         lambda intent, chunk, i, n, cfg: next(replies))
-    cfg = {"starting_url": mock_shop_server, "ollama": {"enabled": True, "model": "mock"}}
+    cfg = {"starting_url": mock_shop_server,
+           "ollama": {"enabled": True, "model": "mock", "strategy": "generate"}}
     test_def = _healing_test("product_v2.html")
     session_factory = init_db(tmp_path / "autoqa.db")
 
@@ -131,7 +134,8 @@ def test_assert_element_not_found_is_healed(mock_shop_server, tmp_path, monkeypa
     and goes through healing like a click timeout."""
     monkeypatch.setattr(healing, "propose_selector",
                         lambda intent, chunk, i, n, cfg: "button.add_to_basket_btn")
-    cfg = {"starting_url": mock_shop_server, "ollama": {"enabled": True, "model": "mock"}}
+    cfg = {"starting_url": mock_shop_server,
+           "ollama": {"enabled": True, "model": "mock", "strategy": "generate"}}
     test_def = _assert_test("button.single_add_to_cart_button")
     session_factory = init_db(tmp_path / "autoqa.db")
 
@@ -140,7 +144,7 @@ def test_assert_element_not_found_is_healed(mock_shop_server, tmp_path, monkeypa
     assert outcome.steps[1].status == "healed_then_passed"
     assert test_def.test.steps[1].selector == "button.add_to_basket_btn"
     msgs = [e["msg"] for e in outcome.steps[1].log.entries]
-    assert any("asking AI to locate" in m for m in msgs)
+    assert any("attempting to relocate" in m for m in msgs)
     assert any("Page HTML compacted to" in m for m in msgs)
 
 
