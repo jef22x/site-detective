@@ -20,6 +20,7 @@ from ..db import ElementFingerprint, HealingEvent, Run, StepResult
 from ..logging_utils import log_error
 from ..schemas import Step, TestDefinition
 from . import healing
+from .blockcheck import BlockedError, inspect_response
 from .diagnostics import PageDiagnostics
 from .errors import classify
 from .steplog import StepLog
@@ -111,11 +112,20 @@ def run_test(test_def: TestDefinition, cfg: dict[str, Any],
                         page, cfg,
                         ignore_console=test.diagnostics.ignore_console,
                         ignore_urls=test.diagnostics.ignore_urls)
+                    # Register before navigating so teardown still records the
+                    # diagnostics (e.g. the 403) even if the block check aborts.
+                    contexts[ctx_name] = page
                     if start_url:
                         resp = page.goto(start_url, timeout=test.defaults.timeout_ms)
                         if resp is not None:
                             diagnostics[ctx_name].record_redirect_chain(resp)
-                    contexts[ctx_name] = page
+                            # goto() succeeds even when the edge serves a WAF
+                            # block page; detect it so the run fails with a
+                            # clear reason instead of a false green.
+                            signal = inspect_response(resp, page)
+                            if signal is not None:
+                                raise BlockedError(signal.provider, signal.evidence,
+                                                   url=start_url)
                 return contexts[ctx_name]
 
             try:

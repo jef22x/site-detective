@@ -15,7 +15,7 @@ Statuses: `Draft` (not started) · `In progress` · `Implemented` ·
 | [spec-test-management-page](spec-test-management-page.md) | Implemented | Test list + form-based editor (`test_editor.html`) |
 | [spec-test-scheduling](spec-test-scheduling.md) | Implemented | Schedules, notifications, email/webhook delivery (2b17395) |
 | [spec-concurrent-runs](spec-concurrent-runs.md) | Implemented | Run slots, per-test exclusivity, WAL (b74abe5) |
-| [spec-friendly-run-errors](spec-friendly-run-errors.md) | Implemented | `app/runner/errors.py`, `error_summary` (1354134) |
+| [spec-friendly-run-errors](spec-friendly-run-errors.md) | Implemented | `app/runner/errors.py`, `error_summary` (1354134); WAF block detection `app/runner/blockcheck.py` (§4.7) |
 | [spec-run-detail-page](spec-run-detail-page.md) | Implemented | Test snapshot, per-step detail, element screenshots |
 | [spec-run-detail-page-pm](spec-run-detail-page-pm.md) | Implemented | PM companion to the above |
 | [spec-step-execution-logs](spec-step-execution-logs.md) | Implemented | `app/runner/steplog.py`, per-step timeline |

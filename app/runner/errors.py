@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
 from ..schemas import Step
+from .blockcheck import BlockedError
 
 
 @dataclass
@@ -103,6 +104,8 @@ _FALLBACK = _Rule("unknown",
 def classify(exc: BaseException, *, url: str | None = None,
              step: Step | None = None,
              timeout_ms: int | None = None) -> FriendlyError:
+    if isinstance(exc, BlockedError):
+        return _classify_blocked(exc, url)
     rule = next((r for r in RULES if r.matches(exc, step)), _FALLBACK)
     subs = {
         "url": url or (getattr(step, "url", None) or "the target URL"),
@@ -112,3 +115,18 @@ def classify(exc: BaseException, *, url: str | None = None,
     title = rule.title.format(**subs)
     detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)).strip()
     return FriendlyError(title=title, hint=rule.hint, detail=detail, kind=rule.kind)
+
+
+def _classify_blocked(exc: BlockedError, url: str | None) -> FriendlyError:
+    """WAF / bot-protection block page (spec §4.7). Type-based, so it bypasses
+    the substring rule table: the provider name comes off the exception."""
+    target = exc.url or url or "the target site"
+    title = (f"Access to {target} was blocked by {exc.provider} bot protection "
+             f"(a WAF) — the run reached a block page, not the site.")
+    hint = ("The automated browser was served a block/challenge page instead of "
+            "the site, so nothing could be tested. Only test sites you control, "
+            "and allowlist the runner in the WAF (IP allowlist or a bypass "
+            "header/token) rather than trying to evade the protection.")
+    detail = "".join(
+        traceback.format_exception(type(exc), exc, exc.__traceback__)).strip()
+    return FriendlyError(title=title, hint=hint, detail=detail, kind="waf_blocked")

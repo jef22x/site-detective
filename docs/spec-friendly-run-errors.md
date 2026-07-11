@@ -1,6 +1,6 @@
 # Spec: User-Friendly Run Error Messages
 
-**Status:** Implemented (commit 1354134)
+**Status:** Implemented (commit 1354134; WAF block-page detection added 2026-07-11, §4.7)
 **Date:** 2026-07-05
 **Depends on:** Runner (`app/runner/executor.py`), step execution (`app/runner/steps.py`), persistence (`app/db.py` — `Run.error`, `StepResult.error`), web UI (`app/web/templates/run_detail.html`, `dashboard.html`), error logging (`app/logging_utils.py`)
 
@@ -120,6 +120,48 @@ Run-level error block (currently `run_detail.html:31-35`):
 ```
 
 Step errors get the same treatment: friendly `s.error` shown inline, `s.error_detail` behind `<details>` when present. The dashboard's latest-run status tooltip/row shows `error_summary` (truncated) instead of nothing or raw text.
+
+### 4.7 WAF / bot-protection block pages (added 2026-07-11)
+
+`page.goto()` resolves *successfully* when a site's edge (Cloudflare, Akamai,
+AWS WAF, Imperva, Sucuri, …) serves an HTTP 403/429/503 "you have been
+blocked" / challenge page: the navigation completed, just to the block page
+rather than the site. Without detection the run proceeds, a `screenshot` step
+captures the block screen, and the run is recorded as **`passed`** — a false
+green. (Observed on run `053290641d…` against `https://nepu.to`, blocked by
+Cloudflare with a 403.)
+
+`app/runner/blockcheck.py` adds:
+
+- `detect_block(status, headers, title, body) -> BlockSignal | None` — a pure,
+  defensively-typed rule table (one `_WafRule` per provider). A rule matches on
+  an **unambiguous body phrase** at any status, or on a **WAF header signature
+  / vendor-specific body marker** combined with a deny status (401/403/406/429/
+  503). Vendor markers are kept specific (Cloudflare `/cdn-cgi/`, Imperva
+  `_incapsula_resource`); generic phrases ("access denied") only match the
+  unattributed-`a web application firewall` fallback, so a normal app 403 or a
+  page that merely mentions "access denied" is not misflagged.
+- `inspect_response(resp, page)` — best-effort wrapper reading status/headers/
+  title/body off the live Playwright objects; never raises into the run path.
+- `BlockedError(provider, evidence, url)` — raised from `page_for` right after
+  the starting navigation when a signal is found. The context is registered
+  before navigating so teardown still records the block's diagnostics (the 403)
+  for the run detail page.
+
+`classify` short-circuits on `BlockedError` (type-based, so it bypasses the
+substring table — the provider name comes off the exception) via
+`_classify_blocked`, yielding a `waf_blocked` `FriendlyError`. The run ends in
+the existing crash path with status **`error`** and an `error_summary` that
+names the provider and points at the sanctioned fix (test sites you control;
+allowlist the runner in the WAF) rather than evasion.
+
+| kind | Match | Title (template) | Hint |
+|---|---|---|---|
+| `waf_blocked` | `BlockedError` from block-page detection after startup navigation | Access to `{url}` was blocked by `{provider}` bot protection (a WAF) — the run reached a block page, not the site. | The automated browser was served a block/challenge page instead of the site, so nothing could be tested. Only test sites you control, and allowlist the runner in the WAF (IP allowlist or a bypass header/token) rather than trying to evade the protection. |
+
+Tests: `unit_tests/test_blockcheck.py` — per-provider detection, strong-marker
+match at 200, false-positive guards (normal 200, app 403, incidental "access
+denied" text), None-tolerance, and `classify(BlockedError)` → `waf_blocked`.
 
 ### 4.6 Notifications
 
