@@ -31,6 +31,33 @@ python -m venv .venv
 .venv\Scripts\python -m playwright install chromium
 ```
 
+On Linux:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python -m playwright install chromium
+```
+
+Playwright has no Arch build and prints `your OS is not officially supported`
+while it downloads its Ubuntu fallback. That warning is expected and the
+browser works. Do not run `playwright install-deps` on Arch/CachyOS — it only
+knows Debian package names.
+
+## Launchers
+
+One-step setup, start and open, for people who just want the UI:
+
+| Platform | Command |
+|---|---|
+| Windows | double-click `SiteDetective.bat` |
+| Linux | `./sitedetective.sh` |
+
+The Linux launcher also takes `stop`, `status`, `update` (`update --dev` adds
+the test tooling) and `logs`. It installs the runtime only, syncs dependencies
+on first setup rather than on every launch — so an installed copy still starts
+with no network — and writes server output to `logs/server.log`.
+
 ## Web UI
 
 ```powershell

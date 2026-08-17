@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Run {{ run.id[:8] }} — {{ run.test_id }}</title>
+<style>
+  /* Inline by design: this file is opened straight off disk as often as it is
+     served, so it can never depend on the app's stylesheet being reachable. */
+  :root {
+    --bg: #f8fafc; --surface: #ffffff; --border: #e2e8f0;
+    --text: #0f172a; --muted: #64748b; --code-bg: #f1f5f9;
+    --pass-fg: #166534; --pass-bg: #dcfce7;
+    --fail-fg: #991b1b; --fail-bg: #fee2e2;
+    --warn-fg: #92400e; --warn-bg: #fef3c7;
+    --skip-fg: #475569; --skip-bg: #f1f5f9;
+    --accent: #4f46e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a; --surface: #1e293b; --border: #334155;
+      --text: #e2e8f0; --muted: #94a3b8; --code-bg: #0b1220;
+      --pass-fg: #86efac; --pass-bg: #14532d;
+      --fail-fg: #fca5a5; --fail-bg: #7f1d1d;
+      --warn-fg: #fcd34d; --warn-bg: #78350f;
+      --skip-fg: #cbd5e1; --skip-bg: #334155;
+      --accent: #a5b4fc;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1.25rem 4rem; background: var(--bg); color: var(--text);
+    font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 60rem; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.1rem; margin: 2.5rem 0 .75rem; }
+  .sub { color: var(--muted); font-size: .875rem; margin: 0 0 1.5rem; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: .625rem; padding: 1rem 1.25rem; margin-bottom: .75rem;
+  }
+  .badge {
+    display: inline-block; padding: .15rem .6rem; border-radius: 999px;
+    font-size: .75rem; font-weight: 600; letter-spacing: .01em;
+  }
+  .passed, .healed_then_passed { color: var(--pass-fg); background: var(--pass-bg); }
+  .failed, .error { color: var(--fail-fg); background: var(--fail-bg); }
+  .healed_then_passed { color: var(--warn-fg); background: var(--warn-bg); }
+  .skipped, .running { color: var(--skip-fg); background: var(--skip-bg); }
+  dl.meta { display: grid; grid-template-columns: auto 1fr; gap: .35rem 1.25rem; margin: 0; }
+  dl.meta dt { color: var(--muted); font-size: .8125rem; }
+  dl.meta dd { margin: 0; font-size: .8125rem; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8125rem; }
+  pre {
+    background: var(--code-bg); border-radius: .375rem; padding: .75rem;
+    overflow-x: auto; margin: .5rem 0 0;
+  }
+  .step-head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+  .step-num { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .step-title { font-weight: 600; }
+  .step-time { margin-left: auto; color: var(--muted); font-size: .8125rem; }
+  .selector { color: var(--muted); font-size: .8125rem; word-break: break-all; margin-top: .35rem; }
+  .shots { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: .75rem; }
+  .shots figure { margin: 0; }
+  .shots img {
+    max-width: 22rem; width: 100%; border: 1px solid var(--border);
+    border-radius: .375rem; display: block;
+  }
+  .shots figcaption { color: var(--muted); font-size: .75rem; margin-top: .25rem; }
+  .err { color: var(--fail-fg); font-size: .875rem; margin-top: .5rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .8125rem; }
+  th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; }
+  .log { list-style: none; margin: .5rem 0 0; padding: 0; }
+  .log li { display: flex; gap: .6rem; font-size: .8125rem; padding: .1rem 0; }
+  .log .t { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 4rem; }
+  .log .kind { color: var(--muted); min-width: 5.5rem; }
+  .log .error .msg { color: var(--fail-fg); }
+  details summary { cursor: pointer; color: var(--accent); font-size: .8125rem; }
+  .scroll { overflow-x: auto; }
+  footer { color: var(--muted); font-size: .75rem; margin-top: 3rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>{{ run.test_id }} <span class="badge {{ run.status }}">{{ run.status_label }}</span></h1>
+  <p class="sub">Run {{ run.id }}</p>
+
+  <div class="card">
+    <dl class="meta">
+      <dt>Started</dt><dd>{{ run.started_at | timestamp }}</dd>
+      <dt>Finished</dt><dd>{{ run.finished_at | timestamp }}</dd>
+      <dt>Duration</dt><dd>{{ run.duration_ms | duration }}</dd>
+      <dt>Trigger</dt><dd>{{ run.trigger }}</dd>
+      {% if tally %}
+      <dt>Steps</dt>
+      <dd>{% for label, count in tally %}{{ count }} {{ label | lower }}{% if not loop.last %} · {% endif %}{% endfor %}</dd>
+      {% endif %}
+    </dl>
+  </div>
+
+  {% if run.error_summary or run.error or run.skip_reason %}
+  <h2>What went wrong</h2>
+  <div class="card">
+    {% if run.error_summary %}<p style="margin:0">{{ run.error_summary }}</p>{% endif %}
+    {% if run.skip_reason %}<p class="sub" style="margin:.5rem 0 0">Skipped: {{ run.skip_reason }}</p>{% endif %}
+    {% if run.error %}
+    <details {% if not run.error_summary %}open{% endif %}>
+      <summary>Full trace</summary>
+      <pre>{{ run.error }}</pre>
+    </details>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <h2>Steps</h2>
+  {% for step in steps %}
+  <div class="card">
+    <div class="step-head">
+      <span class="step-num">#{{ "%02d" | format(step.index) }}</span>
+      <span class="step-title">{{ step.intent or step.type_label }}</span>
+      <span class="badge {{ step.status }}">{{ step.status_label }}</span>
+      <span class="step-time">{{ step.duration_ms | duration }}</span>
+    </div>
+    {% if step.intent %}<div class="selector">{{ step.type_label }}</div>{% endif %}
+    {% if step.selector %}<div class="selector"><code>{{ step.selector }}</code></div>{% endif %}
+
+    {% if step.error %}
+    <p class="err">{{ step.error }}</p>
+    {% if step.error_detail and step.error_detail != step.error %}
+    <details><summary>Raw error</summary><pre>{{ step.error_detail }}</pre></details>
+    {% endif %}
+    {% endif %}
+
+    {% if step.log %}
+    <details>
+      <summary>Execution log ({{ step.log | length }})</summary>
+      <ul class="log">
+        {% for entry in step.log %}
+        <li class="{{ entry.kind }}">
+          <span class="t">{{ entry.t }} ms</span>
+          <span class="kind">{{ entry.kind }}</span>
+          <span class="msg">{{ entry.msg }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+
+    {% if step.screenshot or step.element_screenshot %}
+    <div class="shots">
+      {% if step.screenshot %}
+      <figure>
+        <a href="{{ step.screenshot }}"><img src="{{ step.screenshot }}" alt="Page after step {{ step.index }}"></a>
+        <figcaption>Page</figcaption>
+      </figure>
+      {% endif %}
+      {% if step.element_screenshot %}
+      <figure>
+        <a href="{{ step.element_screenshot }}"><img src="{{ step.element_screenshot }}" alt="Target element for step {{ step.index }}"></a>
+        <figcaption>Target element</figcaption>
+      </figure>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="card"><p class="sub" style="margin:0">This run recorded no steps.</p></div>
+  {% endfor %}
+
+  {% if healings %}
+  <h2>Healing audit trail</h2>
+  {% for h in healings %}
+  <div class="card">
+    <div class="step-head">
+      <span class="step-num">#{{ "%02d" | format(h.step_index) }}</span>
+      <span class="step-title">Selector healing</span>
+      <span class="badge {{ 'passed' if h.accepted else 'failed' }}">{{ "Accepted" if h.accepted else "Rejected" }}</span>
+      {% if h.model %}<span class="step-time">{{ h.model }}</span>{% endif %}
+    </div>
+    <dl class="meta" style="margin-top:.6rem">
+      <dt>Was</dt><dd><code>{{ h.old_selector }}</code></dd>
+      <dt>Proposed</dt><dd>{% if h.proposed_selector %}<code>{{ h.proposed_selector }}</code>{% else %}— no candidate{% endif %}</dd>
+    </dl>
+    {% if h.before or h.after %}
+    <div class="shots">
+      {% if h.before %}
+      <figure>
+        <a href="{{ h.before }}"><img src="{{ h.before }}" alt="Before healing step {{ h.step_index }}"></a>
+        <figcaption>Before</figcaption>
+      </figure>
+      {% endif %}
+      {% if h.after %}
+      <figure>
+        <a href="{{ h.after }}"><img src="{{ h.after }}" alt="After healing step {{ h.step_index }}"></a>
+        <figcaption>After</figcaption>
+      </figure>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if diagnostics %}
+  <h2>Page diagnostics</h2>
+  {% for page in diagnostics %}
+  <div class="card">
+    <div class="selector" style="margin:0 0 .5rem"><code>{{ page.url }}</code></div>
+    <dl class="meta">
+      <dt>Load</dt><dd>{{ page.load_ms | duration }}</dd>
+      <dt>Transferred</dt><dd>{% if page.transfer_bytes %}{{ (page.transfer_bytes / 1024) | round | int }} KB{% else %}—{% endif %}</dd>
+      <dt>Console errors</dt><dd>{{ page.console_errors | length }}</dd>
+      <dt>Page errors</dt><dd>{{ page.page_errors | length }}</dd>
+      <dt>Failed requests</dt><dd>{{ page.requests_failed | length }}</dd>
+      {% if page.insecure_requests %}<dt>Insecure requests</dt><dd>{{ page.insecure_requests | length }}</dd>{% endif %}
+    </dl>
+    {% if page.console_errors or page.page_errors or page.requests_failed %}
+    <details>
+      <summary>Details</summary>
+      <ul class="log">
+        {% for c in page.console_errors %}
+        <li class="error"><span class="kind">console</span><span class="msg">{{ c.text }}</span></li>
+        {% endfor %}
+        {% for e in page.page_errors %}
+        <li class="error"><span class="kind">page error</span><span class="msg">{{ e.text }}</span></li>
+        {% endfor %}
+        {% for r in page.requests_failed %}
+        <li class="error"><span class="kind">request</span><span class="msg">{{ r.method }} {{ r.url }}</span></li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if test_snapshot or config_snapshot %}
+  <h2>Snapshots</h2>
+  <div class="card">
+    {% if test_snapshot %}
+    <details>
+      <summary>Test definition as it ran</summary>
+      <pre class="scroll">{{ test_snapshot | tojson(indent=2) }}</pre>
+    </details>
+    {% endif %}
+    {% if config_snapshot %}
+    <details>
+      <summary>Configuration (secrets masked)</summary>
+      <pre class="scroll">{{ config_snapshot | tojson(indent=2) }}</pre>
+    </details>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <footer>Generated by SiteDetective on {{ generated_at | timestamp }}.</footer>
+</div>
+</body>
+</html>

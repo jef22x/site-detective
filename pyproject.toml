@@ -30,6 +30,7 @@ packages = ["app", "app.runner", "app.reports", "app.web"]
 
 [tool.setuptools.package-data]
 "app.runner" = ["vendor/*.js"]
+"app.reports" = ["templates/*.html"]
 
 [tool.ruff]
 target-version = "py311"

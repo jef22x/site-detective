@@ -44,3 +44,24 @@ def test_failure_marks_run_failed_and_skips_rest(mock_shop_server, tmp_path):
     assert outcome.status == "failed"
     assert outcome.steps[2].status == "failed"
     assert all(s.status == "skipped" for s in outcome.steps[3:])
+
+
+def test_per_test_starting_url_moves_the_opening_page_only(mock_shop_server, tmp_path):
+    """`test.starting_url` chooses where each context opens; it deliberately
+    does not redefine {{starting_url}}, which stays the configured site root.
+    mock-full-lifecycle.yaml depends on the split — it opens on a product page
+    while its login step still resolves {{starting_url}}/wp-login.php."""
+    cfg = {"starting_url": mock_shop_server, "ollama": {"enabled": False}}
+    test_def = load_test(ROOT / "tests" / "mock-shop-purchase.yaml")
+    test_def.test.starting_url = "{{starting_url}}/product.html"
+    session_factory = init_db(tmp_path / "autoqa.db")
+
+    outcome = run_test(test_def, cfg, session_factory, tmp_path / "reports")
+
+    statuses = [(s.index, s.step_type, s.status, s.error) for s in outcome.steps]
+    assert outcome.status == "passed", f"steps: {statuses}"
+
+    # {{starting_url}} still names the site root, not the opening page.
+    with session_factory() as db:
+        run = db.get(Run, outcome.run_id)
+        assert f'"starting_url": "{mock_shop_server}"' in run.config_snapshot
