@@ -11,6 +11,8 @@
   {% endif %}
   <a href="/tests/{{ run.test_id }}" class="{{ c.btn_secondary() }} px-2.5 py-1.5 text-xs">View test</a>
   <a href="/tests/{{ run.test_id }}/edit" class="{{ c.btn_secondary() }} px-2.5 py-1.5 text-xs">Edit test</a>
+  <button onclick="rerunTest(this, '{{ run.test_id }}')" {% if run.status == 'running' %}disabled{% endif %}
+    title="Start a fresh run of this test" class="{{ c.btn_success() }} px-2.5 py-1.5 text-xs">Rerun</button>
 </div>
 <p class="mb-4 text-sm {{ c.muted() }}">Test <code>{{ run.test_id }}</code> · Run <code>{{ run.id }}</code> · {{ run.started_at }}
   {% if run.duration %} · took {{ run.duration }}{% endif %}

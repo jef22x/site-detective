@@ -1,14 +1,40 @@
 {% extends "base.html" %}
+{% import "_components.html" as c %}
 {% block header %}Run detail{% endblock %}
 {% block content %}
-<div id="run-body" data-run-id="{{ run.id }}">
+<div id="run-body" data-run-id="{{ run.id }}" data-status="{{ run.status }}">
 {% include "run_detail_body.html" %}
 </div>
+{# Lives outside #run-body so a fragment swap never wipes a visible toast. #}
+<div id="toast" class="hidden fixed bottom-6 right-6 {{ c.toast_ok() }}"></div>
 
 <script>
+const TOAST_OK = '{{ c.toast_ok() }}';
+const TOAST_ERR = '{{ c.toast_ok() }} text-danger-600 dark:text-danger-400';
+function toast(msg, isError) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'fixed bottom-6 right-6 ' + (isError ? TOAST_ERR : TOAST_OK);
+  setTimeout(() => el.classList.add('hidden'), 4000);
+}
+// Global (not inside the polling IIFE below, which returns early for finished
+// runs) because the button's inline onclick lives in the swappable fragment.
+async function rerunTest(btn, testId) {
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/tests/${encodeURIComponent(testId)}/run`, {method: 'POST'});
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    const data = await r.json();
+    location.href = `/runs/${encodeURIComponent(data.run_id)}`;
+  } catch (e) { toast(e.message, true); btn.disabled = false; }
+}
+
 (function() {
-  const runId = "{{ run.id }}";
-  let terminal = {{ 'true' if run.status not in ('running',) else 'false' }};
+  // Templated values ride in on #run-body's data-* attributes: Jinja in a JS
+  // expression slot leaves this script unparseable for editors and linters.
+  const body = document.getElementById('run-body');
+  const runId = body.dataset.runId;
+  let terminal = body.dataset.status !== 'running';
   let lastSteps = -1, lastHealings = -1, lastStatus = null;
   if (terminal) return;  // nothing to poll for an already-finished run
 
