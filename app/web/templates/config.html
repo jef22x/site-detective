@@ -88,6 +88,48 @@
         class="{{ c.input_cls() }} w-full">
       <p class="err mt-1 hidden text-sm text-danger-600 dark:text-danger-400" data-err="notify_email_to"></p>
     </div>
+    <div class="mt-4 grid gap-4 sm:grid-cols-2">
+      <div>
+        <label class="{{ c.label_cls() }} mb-1">Email the client about</label>
+        <select id="c-alerting-client-email" class="{{ c.input_cls() }} w-full">
+          {% for value, text in [
+            ('transitions', 'Outages and recoveries only (recommended)'),
+            ('all', 'Every event (one email per failed run)'),
+            ('off', 'Nothing (operator webhook only)'),
+            ('manual', 'Hold for my approval before sending')] %}
+          <option value="{{ value }}" {% if alerting.client_email == value %}selected{% endif %}>{{ text }}</option>
+          {% endfor %}
+        </select>
+        <p class="mt-1 text-sm {{ c.muted() }}">A site that stays broken still emails twice:
+          once when it breaks, once when it recovers.</p>
+      </div>
+      <div>
+        <label class="{{ c.label_cls() }} mb-1">Send to the operator webhook</label>
+        <select id="c-alerting-operator-webhook" class="{{ c.input_cls() }} w-full">
+          {% for value, text in [
+            ('all', 'Every event (recommended)'),
+            ('transitions', 'Outages and recoveries only'),
+            ('off', 'Nothing')] %}
+          <option value="{{ value }}" {% if alerting.operator_webhook == value %}selected{% endif %}>{{ text }}</option>
+          {% endfor %}
+        </select>
+        <p class="mt-1 text-sm {{ c.muted() }}">Set <code>NOTIFY_WEBHOOK_URL</code> in <code>.env</code> to use this.</p>
+      </div>
+      <div>
+        <label class="mb-1 inline-flex items-center gap-2 text-sm">
+          <input id="c-alerting-confirm-failures" type="checkbox"
+            {% if alerting.confirm_failures %}checked{% endif %} class="size-4 rounded accent-primary-600">
+          Re-run a failed test before alerting
+        </label>
+        <p class="mt-1 text-sm {{ c.muted() }}">A one-off blip that passes on the re-run never reaches the client.</p>
+      </div>
+      <div>
+        <label class="{{ c.label_cls() }} mb-1">Wait before the re-run (seconds)</label>
+        <input id="c-alerting-confirm-delay-s" type="number" min="0" max="3600"
+          value="{{ alerting.confirm_delay_s }}" class="{{ c.input_cls() }} w-full">
+        <p class="err mt-1 hidden text-sm text-danger-600 dark:text-danger-400" data-err="alerting_confirm_delay_s"></p>
+      </div>
+    </div>
     <p class="mt-2 text-sm {{ c.muted() }}">
       {% if env.smtp.configured %}
         {{ '✅' if env.smtp.ok else '❌' }} SMTP: <code>{{ env.smtp.host }}</code>{% if env.smtp.error %} — {{ env.smtp.error }}{% endif %}
@@ -162,6 +204,10 @@ async function saveConfig() {
     ollama_num_ctx: +document.getElementById('c-ollama-num-ctx').value,
     email_notifications: document.getElementById('c-email-notifications').checked,
     notify_email_to: document.getElementById('c-notify-email-to').value.trim(),
+    alerting_client_email: document.getElementById('c-alerting-client-email').value,
+    alerting_operator_webhook: document.getElementById('c-alerting-operator-webhook').value,
+    alerting_confirm_failures: document.getElementById('c-alerting-confirm-failures').checked,
+    alerting_confirm_delay_s: +document.getElementById('c-alerting-confirm-delay-s').value,
   };
   try {
     const r = await fetch('/api/config', {

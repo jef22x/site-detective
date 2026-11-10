@@ -16,11 +16,21 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .config import SECRET_KEYS, load_config
-from .db import (ElementFingerprint, HealingEvent, Notification, Run, Schedule,
-                 StepResult, _now, init_db)
+from . import alerting
+from .config import SECRET_KEYS, alert_settings, load_config
+from .db import (
+    ElementFingerprint,
+    HealingEvent,
+    Notification,
+    Run,
+    Schedule,
+    StepResult,
+    _now,
+    init_db,
+)
 from .envcheck import check_environment
-from .notify import create_notification
+from .logging_utils import log_error
+from .notify import create_notification, deliver_held, dismiss_held, held_count
 from .reporting import compute_test_health
 from .reports.builder import build_report
 from .runner.executor import run_test
@@ -160,6 +170,14 @@ def _test_file_for(test_id: str) -> Path | None:
     return None
 
 
+def _test_name_for(test_id: str) -> str | None:
+    """Display name for alert messages; None when the test file is gone."""
+    for e in _test_index():
+        if e["valid"] and e["id"] == test_id:
+            return e["name"]
+    return None
+
+
 def _launch(test_def, test_file: Path, trigger: str = "manual",
            schedule_id: str | None = None) -> str:
     """Mints the run id and registers its live-progress entry synchronously
@@ -200,6 +218,17 @@ def _fire_scheduled(test_file: Path, schedule_id: str) -> None:
     _launch(test_def, test_file, "scheduled", schedule_id)
 
 
+def _fire_confirmation(test_file: Path) -> str:
+    """Confirmation re-run of a failed test (spec: docs/spec-alert-triage.md
+    §5). Belongs to no schedule; returns the new run id."""
+    test_def = load_test(test_file)
+    try:
+        _acquire(test_def.test.id)
+    except _Busy as e:
+        raise BusyError(e.past) from e
+    return _launch(test_def, test_file, "confirmation", None)
+
+
 def _execute(test_def, test_file: Path, run_id: str, trigger: str = "manual",
              schedule_id: str | None = None):
     """Runs in its own thread; the slot for test_def.test.id and the
@@ -226,35 +255,75 @@ def _execute(test_def, test_file: Path, run_id: str, trigger: str = "manual",
     finally:
         entry["ended"] = time.monotonic()
         _release(test_id)
-    if trigger == "scheduled" and schedule_id:
-        _after_scheduled_run(cfg, test_id, schedule_id, outcome)
+    _finalize_run(cfg, test_def, trigger, schedule_id, outcome, run_id)
 
 
-def _after_scheduled_run(cfg, test_id: str, schedule_id: str, outcome):
+def _failure_detail(outcome) -> str:
+    """Operator-facing detail: whatever says most about the failure, including
+    step internals. Goes to the webhook and the in-app log, never to a client
+    email — use `_client_summary` for that."""
+    if outcome is None:
+        return "the run crashed before completing"
+    return (outcome.error_summary or
+            (outcome.error.splitlines()[0] if outcome.error else None) or
+            "; ".join(f"step #{s.index} {s.step_type}: {s.error}"
+                      for s in outcome.steps if s.status == "failed") or
+            "see run detail")
+
+
+def _client_summary(outcome) -> str | None:
+    """Client-facing one-liner (spec: docs/spec-alert-triage.md §4.3): the
+    friendly `error_summary` only — never a traceback line, a selector or a
+    step index. None when nothing safe can be said, and `alerting._message`
+    then points at the run detail instead."""
+    if outcome is None:
+        return "The run crashed before completing."
+    return outcome.error_summary or None
+
+
+def _finalize_run(cfg, test_def, trigger: str, schedule_id: str | None,
+                  outcome, run_id: str):
+    """Runs after every finished run, whatever started it (spec:
+    docs/spec-alert-triage.md §4.0). A crash leaves no outcome; it still
+    counts as a failure so an outage can never be lost."""
+    test_id = test_def.test.id
     status = outcome.status if outcome else "error"
-    with session_factory() as db:
-        row = db.get(Schedule, schedule_id)
-        if row:
-            row.last_result = status
-            db.commit()
-    if status in ("failed", "error"):
-        detail = (outcome.error_summary if outcome and outcome.error_summary else
-                  outcome.error.splitlines()[0] if outcome and outcome.error else
-                  "; ".join(f"step #{s.index} {s.step_type}: {s.error}"
-                            for s in (outcome.steps if outcome else [])
-                            if s.status == "failed") or "see run detail")
-        create_notification(
-            session_factory, cfg,
-            kind="run_failed" if status == "failed" else "run_error",
-            severity="error",
-            title=f"Scheduled run of '{test_id}' {status}",
-            body=detail, run_id=outcome.run_id if outcome else None,
-            schedule_id=schedule_id)
+    failed = status in ("failed", "error")
+    detail = _failure_detail(outcome) if failed else None
+    if trigger == "scheduled" and schedule_id:
+        with session_factory() as db:
+            row = db.get(Schedule, schedule_id)
+            if row:
+                row.last_result = status
+                db.commit()
+    # The operator sees every failed run of a schedule or a confirmation;
+    # manual runs stay silent (the operator is watching them already).
+    if failed and trigger in ("scheduled", "confirmation"):
+        try:
+            create_notification(
+                session_factory, cfg,
+                kind="run_failed" if status == "failed" else "run_error",
+                severity="error",
+                title=f"{trigger.capitalize()} run of '{test_id}' {status}",
+                body=detail, run_id=run_id, schedule_id=schedule_id, test_id=test_id)
+        except Exception as e:  # the per-run log must not cost us the alert below
+            log_error(f"operator notification failed for '{test_id}': "
+                      f"{type(e).__name__}: {e}")
+    try:
+        alerting.record_run(session_factory, cfg, test_id=test_id, run_id=run_id,
+                            status=outcome.status if outcome else None,
+                            trigger=trigger,
+                            test_name=test_def.test.name or test_id,
+                            summary=_client_summary(outcome) if failed else None)
+    except Exception as e:  # alert bookkeeping must never break a run
+        log_error(f"alert state update failed for '{test_id}': {type(e).__name__}: {e}")
 
 
 scheduler = Scheduler(session_factory, lambda: load_config(CONFIG_PATH),
                       lambda test_id: _test_file_for(test_id),
-                      _fire_scheduled, REPORTS_DIR)
+                      _fire_scheduled, REPORTS_DIR,
+                      fire_confirmation=_fire_confirmation,
+                      name_resolver=_test_name_for)
 scheduler.start()
 
 
@@ -266,7 +335,7 @@ def dashboard(request: Request):
     test_names = {e["id"]: e["name"] for e in tests if e["valid"]}
     return templates.TemplateResponse(request, "dashboard.html", {
         "runs": _with_duration(runs), "tests": tests, "live": _live_snapshot(),
-        "test_names": test_names})
+        "test_names": test_names, "alert_state": alerting.state_map(session_factory)})
 
 
 @app.post("/run")
@@ -282,7 +351,8 @@ def trigger_run(test: str = Form(...)):
 def status():
     with session_factory() as db:
         unread = db.query(Notification).filter(Notification.read_at.is_(None)).count()
-    return JSONResponse({**_live_snapshot(), "unread_notifications": unread})
+    return JSONResponse({**_live_snapshot(), "unread_notifications": unread,
+                         "held_notifications": held_count(session_factory)})
 
 
 @app.get("/api/env")
@@ -526,7 +596,8 @@ def api_run_live(run_id: str):
 @app.get("/tests", response_class=HTMLResponse)
 def tests_list(request: Request):
     return templates.TemplateResponse(request, "tests_list.html", {
-        "tests": _test_index(), "live": _live_snapshot()})
+        "tests": _test_index(), "live": _live_snapshot(),
+        "alert_state": alerting.state_map(session_factory)})
 
 
 @app.get("/tests/new", response_class=HTMLResponse)
@@ -641,6 +712,7 @@ def api_delete_test(test_id: str):
         raise HTTPException(404, f"unknown test '{test_id}'")
     path.unlink()
     _prune_fingerprints(test_id, set())
+    alerting.drop_state(session_factory, test_id)
     return {"deleted": test_id}
 
 
@@ -854,6 +926,7 @@ def notifications_page(request: Request, unread: int = 0, offset: int = 0):
     return templates.TemplateResponse(request, "notifications_list.html", {
         "items": items, "total": total, "offset": offset, "unread_only": bool(unread),
         "email_on": bool(cfg.get("email_notifications")),
+        "alerting": alert_settings(cfg),
         "email_ready": bool(cfg.get("smtp_host") and cfg.get("notify_email_to"))})
 
 
@@ -903,6 +976,22 @@ def api_notification_read(notification_id: str):
     return {"read": notification_id}
 
 
+@app.post("/api/notifications/{notification_id}/notify-client")
+def api_notification_notify_client(notification_id: str):
+    """Release a held client email (spec: docs/spec-alert-triage.md §6)."""
+    sent, err = deliver_held(session_factory, load_config(CONFIG_PATH), notification_id)
+    if not sent:
+        raise HTTPException(409, err or "could not send")
+    return {"sent": notification_id}
+
+
+@app.post("/api/notifications/{notification_id}/dismiss")
+def api_notification_dismiss(notification_id: str):
+    if not dismiss_held(session_factory, notification_id):
+        raise HTTPException(409, "notification is not awaiting triage")
+    return {"dismissed": notification_id}
+
+
 @app.post("/api/notifications/read-all")
 def api_notifications_read_all():
     from .db import _now
@@ -950,7 +1039,8 @@ def show_test(request: Request, name: str):
         "td": td, "file": path.name, "error": error,
         "raw": path.read_text(encoding="utf-8") if td is None else None,
         "runs": runs, "runs_total": runs_total, "schedules": schedules,
-        "health": health, "live": _live_snapshot()})
+        "health": health, "live": _live_snapshot(),
+        "alert_state": alerting.state_map(session_factory)})
 
 
 @app.get("/tests/{test_id}/report", response_class=HTMLResponse)
@@ -1032,6 +1122,7 @@ def edit_config(request: Request):
         "masked": yaml.safe_dump(masked, sort_keys=False),
         "content": CONFIG_PATH.read_text(encoding="utf-8"), "error": None,
         "cfg": cfg, "ollama": cfg.get("ollama") or {},
+        "alerting": alert_settings(cfg),
         "admin_password_set": bool(cfg.get("admin_password")),
         "env": check_environment(cfg)})
 
@@ -1051,6 +1142,7 @@ def save_config(request: Request, content: str = Form(...)):
     return templates.TemplateResponse(request, "config.html", {
         "masked": yaml.safe_dump(masked, sort_keys=False), "content": content,
         "error": error, "cfg": cfg, "ollama": cfg.get("ollama") or {},
+        "alerting": alert_settings(cfg),
         "admin_password_set": bool(cfg.get("admin_password")),
         "env": check_environment(cfg)})
 
@@ -1082,6 +1174,18 @@ def api_update_config(body: ConfigIn):
         text_ = _patch_yaml_nested(text_, "ollama", "model", _yaml_scalar(body.ollama_model))
     if body.ollama_num_ctx is not None:
         text_ = _patch_yaml_nested(text_, "ollama", "num_ctx", _yaml_scalar(body.ollama_num_ctx))
+    if body.alerting_client_email:
+        text_ = _patch_yaml_nested(text_, "alerting", "client_email",
+                                   _yaml_scalar(body.alerting_client_email))
+    if body.alerting_operator_webhook:
+        text_ = _patch_yaml_nested(text_, "alerting", "operator_webhook",
+                                   _yaml_scalar(body.alerting_operator_webhook))
+    if body.alerting_confirm_failures is not None:
+        text_ = _patch_yaml_nested(text_, "alerting", "confirm_failures",
+                                   _yaml_scalar(body.alerting_confirm_failures))
+    if body.alerting_confirm_delay_s is not None:
+        text_ = _patch_yaml_nested(text_, "alerting", "confirm_delay_s",
+                                   _yaml_scalar(body.alerting_confirm_delay_s))
 
     CONFIG_PATH.write_text(text_, encoding="utf-8")
     return {"saved": True}

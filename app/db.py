@@ -63,13 +63,49 @@ class Notification(Base):
 
     id: Mapped[str] = mapped_column(primary_key=True, default=lambda: uuid.uuid4().hex)
     created_at: Mapped[datetime] = mapped_column(default=_now)
-    kind: Mapped[str]  # run_failed|run_error|run_skipped|schedule_disabled
-    severity: Mapped[str]  # warning|error
+    kind: Mapped[str]  # run_failed|run_error|run_skipped|schedule_disabled|outage|recovered|flaky
+    severity: Mapped[str]  # info|warning|error
     title: Mapped[str]
     body: Mapped[str] = mapped_column(default="")
     run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id"), default=None)
     schedule_id: Mapped[str | None] = mapped_column(default=None)
+    test_id: Mapped[str | None] = mapped_column(default=None)
     read_at: Mapped[datetime | None] = mapped_column(default=None)
+    # Manual triage (spec: docs/spec-alert-triage.md §6): held_at is set while a
+    # client email waits for operator approval; client_action is sent|dismissed
+    # once the operator decides.
+    held_at: Mapped[datetime | None] = mapped_column(default=None)
+    client_action: Mapped[str | None] = mapped_column(default=None)
+
+
+class AlertState(Base):
+    """Alert state per test (spec: docs/spec-alert-triage.md §4.1). This is the
+    *alert* state — is the site currently broken — not the pass-rate/grade
+    history that `reporting.compute_test_health` produces."""
+    __tablename__ = "test_health"
+
+    test_id: Mapped[str] = mapped_column(primary_key=True)
+    state: Mapped[str] = mapped_column(default="unknown")  # passing|failing|unknown
+    since: Mapped[datetime] = mapped_column(default=_now)  # when this state began
+    last_run_id: Mapped[str | None] = mapped_column(default=None)  # last transition cause
+    failed_run_count: Mapped[int] = mapped_column(default=0)  # failures in this state
+    # Audience of the outage that started the current failing state: "operator"
+    # when the client was never told, so the recovery stays internal too.
+    outage_audience: Mapped[str | None] = mapped_column(default=None)
+    updated_at: Mapped[datetime] = mapped_column(default=_now)
+
+
+class PendingConfirmation(Base):
+    """A failure waiting to be confirmed by a re-run (spec: docs/spec-alert-triage.md
+    §5.3). Persisted rather than kept in a sleeping thread so a restart during
+    the confirmation delay can never swallow an outage."""
+    __tablename__ = "pending_confirmations"
+
+    test_id: Mapped[str] = mapped_column(primary_key=True)
+    origin_run_id: Mapped[str | None] = mapped_column(default=None)
+    due_at: Mapped[datetime] = mapped_column(default=_now)
+    fired_run_id: Mapped[str | None] = mapped_column(default=None)  # set when it starts
+    created_at: Mapped[datetime] = mapped_column(default=_now)
 
 
 class StepResult(Base):
@@ -166,4 +202,18 @@ def init_db(db_path: str | Path) -> sessionmaker[Session]:
         if col not in step_cols:
             with engine.begin() as conn:
                 conn.execute(text(ddl))
+    notif_cols = {c["name"] for c in inspect(engine).get_columns("notifications")}
+    notif_migrations = {
+        "test_id": "ALTER TABLE notifications ADD COLUMN test_id TEXT",
+        "held_at": "ALTER TABLE notifications ADD COLUMN held_at DATETIME",
+        "client_action": "ALTER TABLE notifications ADD COLUMN client_action TEXT",
+    }
+    for col, ddl in notif_migrations.items():
+        if col not in notif_cols:
+            with engine.begin() as conn:
+                conn.execute(text(ddl))
+    health_cols = {c["name"] for c in inspect(engine).get_columns("test_health")}
+    if "outage_audience" not in health_cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE test_health ADD COLUMN outage_audience TEXT"))
     return sessionmaker(engine, expire_on_commit=False)

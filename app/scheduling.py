@@ -16,11 +16,16 @@ from datetime import UTC, datetime, timedelta
 
 from croniter import croniter
 
+from . import alerting
 from .db import Run, Schedule, _now
 from .logging_utils import log_error
 from .notify import create_notification, prune_notifications
 
 POLL_SECONDS = 60
+# Confirmation re-runs (spec: docs/spec-alert-triage.md §5.3) get their own,
+# faster poll: waiting a full schedule poll would add a minute of detection
+# latency to every real outage.
+CONFIRM_POLL_SECONDS = 10
 MIN_CRON_GAP_SECONDS = 5 * 60
 _PRUNE_EVERY = timedelta(days=1)
 
@@ -79,18 +84,24 @@ class Scheduler:
     """fire(test_file, schedule_id) must raise BusyError when a run is active."""
 
     def __init__(self, session_factory, cfg_loader, test_file_resolver, fire,
-                 reports_dir):
+                 reports_dir, fire_confirmation=None, name_resolver=None):
         self.session_factory = session_factory
         self.cfg_loader = cfg_loader
         self.resolve_test = test_file_resolver
         self.fire = fire
+        self.fire_confirmation = fire_confirmation
+        self.resolve_name = name_resolver or (lambda test_id: None)
         self.reports_dir = reports_dir
         self._stop = threading.Event()
         self._last_prune: datetime | None = None
 
     def start(self):
         self._advance_overdue()
+        self._resolve_stale_confirmations()
         threading.Thread(target=self._loop, name="scheduler", daemon=True).start()
+        if self.fire_confirmation is not None:
+            threading.Thread(target=self._confirm_loop, name="confirmations",
+                             daemon=True).start()
 
     def stop(self):
         self._stop.set()
@@ -123,6 +134,54 @@ class Scheduler:
             self._last_prune = now
             prune_notifications(self.session_factory)
 
+    def _confirm_loop(self):
+        while not self._stop.wait(CONFIRM_POLL_SECONDS):
+            try:
+                self.check_confirmations()
+            except Exception as e:  # never kill the loop over one bad row
+                log_error(f"confirmation check crashed: {type(e).__name__}: {e}")
+
+    def check_confirmations(self):
+        """Fire every confirmation whose delay has elapsed. A confirmation that
+        cannot start resolves the original failure as confirmed — delaying a
+        real outage alert is worse than an occasional unconfirmed flake."""
+        for row in alerting.due_confirmations(self.session_factory):
+            test_id, origin = row["test_id"], row["origin_run_id"]
+            test_file = self.resolve_test(test_id)
+            if test_file is None:
+                self._confirm_failed(test_id, origin,
+                                     "no test file resolves to this id any more, "
+                                     "so the failure was taken at face value")
+                continue
+            try:
+                run_id = self.fire_confirmation(test_file)
+            except BusyError as e:
+                self._confirm_failed(test_id, origin,
+                                     f"the confirmation re-run could not start "
+                                     f"({e}), so the failure was taken at face value")
+            except Exception as e:
+                log_error(f"confirmation run for '{test_id}' failed to start: "
+                          f"{type(e).__name__}: {e}")
+                self._confirm_failed(test_id, origin,
+                                     "the confirmation re-run could not start, "
+                                     "so the failure was taken at face value")
+            else:
+                alerting.mark_fired(self.session_factory, test_id, run_id)
+
+    def _resolve_stale_confirmations(self):
+        """Startup: a confirmation whose run never finished died with the
+        process. Its originating failure is still undecided, so decide it."""
+        for row in alerting.stale_confirmations(self.session_factory):
+            self._confirm_failed(
+                row["test_id"], row["fired_run_id"] or row["origin_run_id"],
+                "the confirmation re-run was interrupted by a restart, so the "
+                "failure was taken at face value")
+
+    def _confirm_failed(self, test_id: str, run_id: str | None, reason: str):
+        alerting.resolve_as_confirmed(
+            self.session_factory, self.cfg_loader(), test_id=test_id,
+            run_id=run_id, reason=reason, test_name=self.resolve_name(test_id))
+
     def _fire_one(self, s: Schedule):
         cfg = self.cfg_loader()
         test_file = self.resolve_test(s.test_id)
@@ -139,7 +198,7 @@ class Scheduler:
                 body=(f"The schedule was disabled because no test file "
                       f"resolves to id '{s.test_id}'. Re-enable it after "
                       f"restoring the test."),
-                schedule_id=s.id)
+                schedule_id=s.id, test_id=s.test_id)
             return
 
         try:
@@ -170,7 +229,7 @@ class Scheduler:
         create_notification(
             self.session_factory, cfg, kind="run_skipped", severity="warning",
             title=f"Scheduled run of '{s.test_id}' was skipped",
-            body=reason, run_id=run_id, schedule_id=s.id)
+            body=reason, run_id=run_id, schedule_id=s.id, test_id=s.test_id)
 
     def _write_skip_artifact(self, run_id: str, test_id: str,
                              when: datetime, reason: str):

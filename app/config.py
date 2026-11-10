@@ -21,6 +21,36 @@ ENV_KEYS = {"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD",
 
 _VAR_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
 
+# Alert routing (spec: docs/spec-alert-triage.md §4.3). `email_notifications`
+# stays the master on/off switch; these decide *which* events reach the client
+# email and the operator webhook.
+ALERTING_DEFAULTS = {"client_email": "transitions", "operator_webhook": "all",
+                     "confirm_failures": True, "confirm_delay_s": 30}
+CLIENT_EMAIL_MODES = ("transitions", "all", "off", "manual")
+OPERATOR_WEBHOOK_MODES = ("all", "transitions", "off")
+
+
+def alert_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved `alerting:` block: defaults applied, unknown values ignored.
+    Safe on a hand-built config dict that has no `alerting` key at all."""
+    raw = cfg.get("alerting")
+    raw = raw if isinstance(raw, dict) else {}
+    out = dict(ALERTING_DEFAULTS)
+    client = str(raw.get("client_email", out["client_email"])).strip().lower()
+    if client in CLIENT_EMAIL_MODES:
+        out["client_email"] = client
+    webhook = str(raw.get("operator_webhook", out["operator_webhook"])).strip().lower()
+    if webhook in OPERATOR_WEBHOOK_MODES:
+        out["operator_webhook"] = webhook
+    out["confirm_failures"] = bool(raw.get("confirm_failures", True))
+    try:
+        delay = int(raw.get("confirm_delay_s", ALERTING_DEFAULTS["confirm_delay_s"]))
+    except (TypeError, ValueError):
+        delay = ALERTING_DEFAULTS["confirm_delay_s"]
+    out["confirm_delay_s"] = max(0, min(3600, delay))
+    return out
+
+
 
 def _load_dotenv(path: Path) -> dict[str, str]:
     """Minimal .env parser: KEY=VALUE lines, '#' comments, optional quotes."""
@@ -61,6 +91,7 @@ def load_config(path: str | Path) -> dict[str, Any]:
     except (TypeError, ValueError):
         n = 3
     data["max_concurrent_runs"] = max(1, min(10, n))
+    data["alerting"] = alert_settings(data)
     return data
 
 

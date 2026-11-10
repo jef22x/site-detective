@@ -8,6 +8,8 @@
   {% endif %}
   {% if run.trigger == 'scheduled' %}
   {{ c.badge('🕐 scheduled', 'info', 'Started by a schedule') }}
+  {% elif run.trigger == 'confirmation' %}
+  {{ c.badge('🔁 confirmation', 'warning', 'Automatic re-run to confirm a failure before alerting the client') }}
   {% endif %}
   <a href="/tests/{{ run.test_id }}" class="{{ c.btn_secondary() }} px-2.5 py-1.5 text-xs">View test</a>
   <a href="/tests/{{ run.test_id }}/edit" class="{{ c.btn_secondary() }} px-2.5 py-1.5 text-xs">Edit test</a>

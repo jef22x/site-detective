@@ -24,6 +24,21 @@
 {{ badge(status | replace('_', ' '), tone_map.get(status, 'danger')) }}
 {%- endmacro %}
 
+{# Alert state of a test (spec: docs/spec-alert-triage.md §4.4). `entry` is a
+   value of the alert_state map, or none when no run has set a state yet. #}
+{% macro alert_badge(entry) -%}
+{%- if not entry or entry.state == 'unknown' -%}
+{{ badge('unknown', 'gray', 'No completed run has set an alert state for this test yet') }}
+{%- elif entry.state == 'failing' -%}
+{%- set n = entry.failed_run_count -%}
+{{ badge('FAILING since ' ~ entry.since.strftime('%b %d %H:%M'), 'danger',
+         'Failing since ' ~ entry.since.strftime('%Y-%m-%d %H:%M:%S') ~ ' UTC — ' ~ n ~ ' failed run' ~ ('s' if n != 1 else '')) }}
+{%- else -%}
+{{ badge('passing since ' ~ entry.since.strftime('%b %d %H:%M'), 'success',
+         'Passing since ' ~ entry.since.strftime('%Y-%m-%d %H:%M:%S') ~ ' UTC') }}
+{%- endif -%}
+{%- endmacro %}
+
 {# Class-string helpers so elements keep their own onclick/attrs. #}
 {% macro section_cls() -%}rounded-xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:bg-gray-900 dark:ring-white/10{%- endmacro %}
 {% macro btn_base() -%}inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-primary-600 disabled:opacity-50{%- endmacro %}

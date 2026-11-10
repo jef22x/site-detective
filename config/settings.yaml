@@ -19,3 +19,11 @@ ollama:
 email_notifications: false
 # Notifications: recipient for email delivery (SMTP creds live in .env)
 # notify_email_to: "you@example.com"
+
+# Alert routing (spec: docs/spec-alert-triage.md). email_notifications above is
+# the master switch; these decide which events reach the client and the operator.
+alerting:
+  client_email: transitions   # transitions|all|off|manual
+  operator_webhook: all       # all|transitions|off
+  confirm_failures: true      # re-run a failed test once before alerting
+  confirm_delay_s: 30         # how long to wait before that re-run

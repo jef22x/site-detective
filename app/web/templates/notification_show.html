@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% import "_components.html" as c %}
-{% block header %}{{ '🔴' if n.severity == 'error' else '⚠️' }} {{ n.title }}{% endblock %}
+{% block header %}{{ {'error': '🔴', 'info': '🟢'}.get(n.severity, '⚠️') }} {{ n.title }}{% endblock %}
 {% block content %}
 <div class="mb-4 flex justify-end">
   <a href="/notifications" class="{{ c.muted() }} hover:underline">&larr; Back</a>
@@ -11,11 +11,25 @@
     <span>Kind: <span class="font-mono">{{ n.kind }}</span></span>
     <span>Severity: {{ n.severity }}</span>
     <span>Created: {{ n.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</span>
+    {% if n.test_id %}<span>Test: <a class="{{ c.link_cls() }}" href="/tests/{{ n.test_id }}">{{ n.test_id }}</a></span>{% endif %}
+    {% if n.client_action %}<span>Client email: {{ 'sent by you' if n.client_action == 'sent' else 'dismissed' }}</span>{% endif %}
     {% if n.read_at %}<span>Read: {{ n.read_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</span>{% endif %}
   </div>
   {% if n.body %}
   <pre class="whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-sm ring-1 ring-gray-950/5 dark:bg-white/5 dark:ring-white/10">{{ n.body }}</pre>
   {% endif %}
+  {% if n.held_at and not n.client_action %}
+  <div class="mt-4 rounded-xl bg-warning-50 p-4 ring-1 ring-warning-600/20 dark:bg-warning-400/10 dark:ring-warning-400/30">
+    <p class="mb-3 text-sm">This alert has <b>not</b> been emailed to the client — manual triage is on.
+      Check the run first, then decide.</p>
+    <div class="flex flex-wrap items-center gap-3">
+      <button onclick="triage('notify-client', this)" class="{{ c.btn_primary() }}">Notify client</button>
+      <button onclick="triage('dismiss', this)" class="{{ c.btn_secondary() }}">Dismiss</button>
+      <span id="triage-msg" class="text-sm {{ c.muted() }}"></span>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="mt-4 flex gap-4 text-sm">
     {% if n.run_id %}
     <a href="/runs/{{ n.run_id }}" class="{{ c.link_cls() }}">Run detail &rarr;</a>
@@ -28,4 +42,20 @@
     {% endif %}
   </div>
 </section>
+
+<script>
+async function triage(action, btn) {
+  const msg = document.getElementById('triage-msg');
+  btn.disabled = true;
+  msg.textContent = action === 'dismiss' ? 'Dismissing…' : 'Sending…';
+  try {
+    const r = await fetch(`/api/notifications/{{ n.id }}/${action}`, {method: 'POST'});
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    location.reload();
+  } catch (e) {
+    btn.disabled = false;
+    msg.textContent = e.message;
+  }
+}
+</script>
 {% endblock %}

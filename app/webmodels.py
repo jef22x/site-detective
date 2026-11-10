@@ -73,6 +73,11 @@ class ConfigIn(BaseModel):
     notify_email_to: str | None = None
     ollama_url: str | None = None
     ollama_model: str | None = None
+    # Alert routing (spec: docs/spec-alert-triage.md §4.3)
+    alerting_client_email: Literal["transitions", "all", "off", "manual"] | None = None
+    alerting_operator_webhook: Literal["all", "transitions", "off"] | None = None
+    alerting_confirm_failures: bool | None = None
+    alerting_confirm_delay_s: int | None = Field(None, ge=0, le=3600)
 
     @model_validator(mode="after")
     def _strip_and_validate(self) -> ConfigIn:

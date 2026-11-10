@@ -16,7 +16,8 @@
                href="/runs/{{ r.id }}">{{ r.id[:12] }}…</a></td>
         <td class="px-4 py-3">{% if r.test_id in test_names %}<a class="{{ c.link_cls() }}" href="/tests/{{ r.test_id }}">{{ test_names[r.test_id] }}</a>
             {% else %}{{ r.test_id }}{% endif %}
-          {% if r.trigger == 'scheduled' %}<span title="Started by a schedule">🕐</span>{% endif %}</td>
+          {% if r.trigger == 'scheduled' %}<span title="Started by a schedule">🕐</span>
+          {% elif r.trigger == 'confirmation' %}<span title="Confirmation re-run of a failure">🔁</span>{% endif %}</td>
         <td class="px-4 py-3">{{ c.status_badge(r.status) }}
           {% if r.diag %}<span class="ml-1">{{ c.badge('⚠ ' ~ (r.diag.errors + r.diag.failed), 'warning', 'Page diagnostics found issues on this run') }}</span>{% endif %}</td>
         <td class="px-4 py-3 font-mono text-xs">{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>

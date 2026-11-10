@@ -10,9 +10,12 @@
     </div>
     <div class="{{ c.divide_cls() }}">
     {% for t in tests %}
-    <div class="flex items-center justify-between py-2.5">
+    <div class="flex items-center justify-between gap-3 py-2.5">
       {% if t.valid %}
-      <a class="{{ c.link_cls() }}" href="/tests/{{ t.id }}">{{ t.name }}</a>
+      <span class="flex min-w-0 items-center gap-2">
+        <a class="{{ c.link_cls() }} truncate" href="/tests/{{ t.id }}">{{ t.name }}</a>
+        {{ c.alert_badge(alert_state.get(t.id)) }}
+      </span>
       {% else %}
       <span class="{{ c.muted() }}" title="{{ t.error }}">{{ t.name }}
         <span class="ml-1 cursor-help">{{ c.badge('invalid', 'warning') }}</span></span>
@@ -133,7 +136,8 @@
                href="/runs/{{ r.id }}">{{ r.id[:12] }}…</a></td>
         <td class="px-4 py-3">{% if r.test_id in test_names %}<a class="{{ c.link_cls() }}" href="/tests/{{ r.test_id }}">{{ test_names[r.test_id] }}</a>
             {% else %}{{ r.test_id }}{% endif %}
-          {% if r.trigger == 'scheduled' %}<span title="Started by a schedule">🕐</span>{% endif %}</td>
+          {% if r.trigger == 'scheduled' %}<span title="Started by a schedule">🕐</span>
+          {% elif r.trigger == 'confirmation' %}<span title="Confirmation re-run of a failure">🔁</span>{% endif %}</td>
         <td class="px-4 py-3">{{ c.status_badge(r.status) }}</td>
         <td class="px-4 py-3 font-mono text-xs">{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
         <td class="px-4 py-3 font-mono text-xs {{ c.muted() }}">{{ r.duration or '—' }}</td>

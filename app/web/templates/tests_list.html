@@ -10,6 +10,7 @@
   <table class="w-full text-sm">
     <thead><tr class="border-b border-gray-200 dark:border-white/10">
       <th class="{{ c.th_cls() }}">Name</th><th class="{{ c.th_cls() }}">ID</th>
+      <th class="{{ c.th_cls() }}">Alert state</th>
       <th class="{{ c.th_cls() }}"># Steps</th><th class="{{ c.th_cls() }}">Last modified</th>
       <th class="{{ c.th_cls() }} text-right">Actions</th>
     </tr></thead>
@@ -25,6 +26,7 @@
           {% endif %}
         </td>
         <td class="px-4 py-3 font-mono text-xs {{ c.muted() }}">{{ t.id or '—' }}</td>
+        <td class="px-4 py-3">{% if t.valid %}{{ c.alert_badge(alert_state.get(t.id)) }}{% endif %}</td>
         <td class="px-4 py-3 font-mono text-xs">{{ t.steps }}</td>
         <td class="px-4 py-3 {{ c.muted() }}">{{ t.mtime | int | string }}<script>
           document.currentScript.parentElement.textContent = new Date({{ t.mtime }} * 1000).toLocaleString();
@@ -40,7 +42,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="px-4 py-6 text-center {{ c.muted() }}">
+      <tr><td colspan="6" class="px-4 py-6 text-center {{ c.muted() }}">
         No tests yet. <a href="/tests/new" class="{{ c.link_cls() }}">Create your first test</a>,
         or <button onclick="createExample()" class="{{ c.link_cls() }}">start from an example</button>.
       </td></tr>

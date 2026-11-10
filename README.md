@@ -183,6 +183,39 @@ Get alerted when tests fail:
 - **In-app notifications**: All events are logged to the Web UI notification center
 - **Graceful degradation**: Delivery failures never block the scheduler or test runs
 
+### Who hears about what
+
+Email is the **client** channel and the webhook is the **operator** channel.
+A site that stays broken on a 15-minute schedule would otherwise send four
+identical emails an hour, so email follows *state changes* only: one message
+when a test starts failing, one when it recovers (with how long it was down).
+The webhook still receives every single event.
+
+Before a passing test is declared down it is automatically re-run once. If the
+re-run passes, the blip is reported to the operator as *flaky* and the client
+never hears about it. Each test's current state is shown as a badge on the
+dashboard, the test list, and the test page.
+
+```yaml
+alerting:
+  client_email: transitions   # transitions | all | off | manual
+  operator_webhook: all       # all | transitions | off
+  confirm_failures: true      # re-run a failure once before alerting
+  confirm_delay_s: 30         # how long to wait before that re-run
+```
+
+`email_notifications` above stays the master switch: with it off, no email is
+sent whatever `client_email` says. `client_email: all` restores the old
+behavior (one email per failed run). `client_email: manual` holds every client
+email until you press **Notify client** (or **Dismiss**) on the notification —
+a banner on every page reminds you while anything is waiting.
+
+Manual runs never alert the client: experimenting in the test editor cannot
+page a site owner. A brand-new test whose first run fails is reported to the
+operator only, since that is far more likely to be a broken test than a broken
+site. Its recovery stays with the operator too: the client never gets a
+"recovered" email for an outage they were not told about.
+
 ### Configuration
 
 SMTP credentials and the webhook URL are **secrets**: they are read from
@@ -207,6 +240,12 @@ NOTIFY_WEBHOOK_URL=https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXX
 ```yaml
 email_notifications: true
 notify_email_to: owner@example.com   # single recipient address
+
+alerting:
+  client_email: transitions
+  operator_webhook: all
+  confirm_failures: true
+  confirm_delay_s: 30
 ```
 
 Use a transactional email provider (Brevo, Postmark, Amazon SES, …) rather

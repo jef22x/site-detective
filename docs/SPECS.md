@@ -27,12 +27,11 @@ Statuses: `Draft` (not started) · `In progress` · `Implemented` ·
 | [spec-healing-tiers](spec-healing-tiers.md) | Implemented (3/3 phases) | Deterministic Tier 1 (intent-text) + Tier 2 (fingerprints) + Tier 3 (multiple-choice model); supersedes the two healing specs above |
 | [design-spec-dark-theme](design-spec-dark-theme.md) | Superseded | Visual language replaced by design-spec-filament-theme; its local Tailwind v4 build pipeline lives on |
 | [design-spec-filament-theme](design-spec-filament-theme.md) | Implemented (4/4 phases) | Filament-style admin UI: sidebar, light+dark toggle, soft badges, Inter self-hosted |
+| [spec-alert-triage](spec-alert-triage.md) | Implemented (3/3 phases) | Health-state transitions, client vs. operator channels, confirmation re-run |
 
 ## Not started
 
-| Spec | Status | Notes |
-|---|---|---|
-| [spec-alert-triage](spec-alert-triage.md) | Draft (0/3 phases) | Health-state transitions, client vs. operator channels, confirmation re-run |
+_Nothing pending — every spec in `docs/` is implemented or superseded._
 
 ## Other documents
 

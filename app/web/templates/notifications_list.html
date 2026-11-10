@@ -11,6 +11,11 @@
   {% if email_on and not email_ready %}
   <span title="Set SMTP_HOST in .env and notify_email_to in settings.yaml">{{ c.badge('SMTP not configured — emails are skipped', 'warning') }}</span>
   {% endif %}
+  {% set modes = {'transitions': 'Client email: outages and recoveries only',
+                  'all': 'Client email: every event',
+                  'off': 'Client email: off (webhook only)',
+                  'manual': 'Client email: held for your approval'} %}
+  <a href="/config" title="Change this under Alerting in Config">{{ c.badge(modes[alerting.client_email], 'info' if alerting.client_email == 'manual' else 'gray') }}</a>
   <a href="/notifications{% if not unread_only %}?unread=1{% endif %}"
     class="{{ c.link_cls() }}">{{ 'Show all' if unread_only else 'Unread only' }}</a>
   <button onclick="readAll()" class="{{ c.link_cls() }}">Mark all read</button>
@@ -20,7 +25,7 @@
   {% for n in items %}
   <a href="/notifications/{{ n.id }}"
      class="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-white/5 {% if not n.read_at %}border-l-2 border-l-primary-500 bg-primary-50/50 dark:bg-primary-400/5{% endif %}">
-    <span class="mt-0.5">{{ '🔴' if n.severity == 'error' else '⚠️' }}</span>
+    <span class="mt-0.5">{{ {'error': '🔴', 'info': '🟢'}.get(n.severity, '⚠️') }}</span>
     <span class="flex-1">
       <span class="block {% if not n.read_at %}font-semibold{% endif %}">{{ n.title }}</span>
       <span class="mt-0.5 block font-mono text-xs {{ c.muted() }}">
@@ -28,6 +33,9 @@
         {% if n.run_id %} · run {{ n.run_id[:12] }}…{% endif %}
       </span>
     </span>
+    {% if n.held_at and not n.client_action %}{{ c.badge('awaiting your OK', 'warning',
+       'The client email is held until you release or dismiss it') }}{% endif %}
+    {% if n.client_action == 'dismissed' %}{{ c.badge('not sent to client', 'gray') }}{% endif %}
     {% if not n.read_at %}{{ c.badge('new', 'info') }}{% endif %}
   </a>
   {% else %}

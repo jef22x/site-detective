@@ -5,6 +5,12 @@ happens only when the `email_notifications` setting is on and SMTP is
 configured; delivery to a webhook happens whenever NOTIFY_WEBHOOK_URL is
 set. Delivery failures never propagate — the scheduler must not die
 because a mail server is down.
+
+Routing (spec: docs/spec-alert-triage.md §4.3): email is the *client*
+channel and the webhook is the *operator* channel. `email_notifications`
+is the master switch; `alerting.client_email` then decides which kinds are
+emailed (`transitions` by default), and `manual` holds transition emails
+for operator approval instead of sending them.
 """
 from __future__ import annotations
 
@@ -15,36 +21,161 @@ from datetime import timedelta
 from email.message import EmailMessage
 from typing import Any
 
+from .config import alert_settings
 from .db import Notification, _now
 from .logging_utils import log_error
 
 PRUNE_READ_AFTER_DAYS = 90
 PRUNE_ANY_AFTER_DAYS = 365
 
+# State-change kinds: the only ones a client ever sees by default.
+TRANSITION_KINDS = frozenset({"outage", "recovered"})
+
+
+def email_decision(cfg: dict[str, Any], kind: str,
+                   audience: str | None = None) -> str:
+    """'send' | 'hold' | 'skip' — should this kind reach the client email?
+
+    `audience="operator"` forces 'skip': some events (a brand-new test's
+    first failure, flaky blips) are diagnostics, never client news.
+    """
+    if not cfg.get("email_notifications") or audience == "operator":
+        return "skip"
+    mode = alert_settings(cfg)["client_email"]
+    if mode == "off":
+        return "skip"
+    if mode == "all":
+        return "send"
+    if kind not in TRANSITION_KINDS:  # transitions | manual
+        return "skip"
+    return "hold" if mode == "manual" else "send"
+
+
+def webhook_wanted(cfg: dict[str, Any], kind: str) -> bool:
+    if not cfg.get("notify_webhook_url"):
+        return False
+    mode = alert_settings(cfg)["operator_webhook"]
+    if mode == "off":
+        return False
+    if mode == "transitions":
+        return kind in TRANSITION_KINDS
+    return True
+
 
 def create_notification(session_factory, cfg: dict[str, Any], *, kind: str,
                         severity: str, title: str, body: str = "",
                         run_id: str | None = None,
-                        schedule_id: str | None = None) -> str:
+                        schedule_id: str | None = None,
+                        test_id: str | None = None,
+                        audience: str | None = None) -> str:
     """Record an in-app notification and attempt external delivery."""
     delivery_notes = []
-    if cfg.get("email_notifications"):
+    decision = email_decision(cfg, kind, audience)
+    held_at, client_action = None, None
+    if decision == "send":
         err = _send_email(cfg, title, body)
         if err:
             delivery_notes.append(f"notification_delivery_failed (email): {err}")
-    if cfg.get("notify_webhook_url"):
+        else:
+            delivery_notes.append("delivered: email")
+    elif decision == "hold":
+        client_action = _auto_dismiss_action(session_factory, kind, test_id)
+        # A dismissed alert is decided, not waiting: held_at stays clear so the
+        # "awaiting triage" count and banner only see live decisions.
+        held_at = _now() if client_action is None else None
+        delivery_notes.append("client email dismissed automatically: the matching "
+                              "outage was never sent to the client"
+                              if client_action == "dismissed" else
+                              "client email held for manual triage")
+    if webhook_wanted(cfg, kind):
         err = _send_webhook(cfg, kind, severity, title, body, run_id)
         if err:
             delivery_notes.append(f"notification_delivery_failed (webhook): {err}")
+        else:
+            delivery_notes.append("delivered: webhook")
     if delivery_notes:
         body = (body + "\n\n" if body else "") + "\n".join(delivery_notes)
 
     with session_factory() as db:
         n = Notification(kind=kind, severity=severity, title=title, body=body,
-                         run_id=run_id, schedule_id=schedule_id)
+                         run_id=run_id, schedule_id=schedule_id, test_id=test_id,
+                         held_at=held_at, client_action=client_action)
         db.add(n)
         db.commit()
         return n.id
+
+
+def _auto_dismiss_action(session_factory, kind: str,
+                         test_id: str | None) -> str | None:
+    """A recovery notice for an outage the client never heard about is
+    confusing, so it is dismissed on arrival (spec §6)."""
+    if kind != "recovered" or not test_id:
+        return None
+    with session_factory() as db:
+        outage = (db.query(Notification)
+                  .filter(Notification.kind == "outage",
+                          Notification.test_id == test_id)
+                  .order_by(Notification.created_at.desc()).first())
+    return "dismissed" if outage is not None and outage.client_action == "dismissed" \
+        else None
+
+
+def deliver_held(session_factory, cfg: dict[str, Any],
+                 notification_id: str) -> tuple[bool, str | None]:
+    """Send a held client email now. Returns (sent, error).
+
+    `email_notifications` outranks the triage button (spec §4.3 precedence):
+    with the master switch off no email leaves the app, so releasing a held
+    alert fails loudly instead of sending behind the operator's back."""
+    if not cfg.get("email_notifications"):
+        return False, ("email notifications are switched off — turn them back on "
+                       "in Config before releasing a held alert")
+    with session_factory() as db:
+        n = db.get(Notification, notification_id)
+        if n is None:
+            return False, "notification not found"
+        if n.held_at is None or n.client_action:
+            return False, "notification is not awaiting triage"
+        title, body = n.title, _without_notes(n.body)
+    err = _send_email(cfg, title, body)
+    with session_factory() as db:
+        n = db.get(Notification, notification_id)
+        note = (f"notification_delivery_failed (email): {err}" if err
+                else "delivered: email (released by operator)")
+        n.body = (n.body + "\n" if n.body else "") + note
+        if not err:
+            n.client_action, n.held_at = "sent", None
+        db.commit()
+    return (not err), err
+
+
+def dismiss_held(session_factory, notification_id: str) -> bool:
+    """Drop a held client email without sending it."""
+    with session_factory() as db:
+        n = db.get(Notification, notification_id)
+        if n is None or n.held_at is None or n.client_action:
+            return False
+        n.client_action, n.held_at = "dismissed", None
+        n.body = (n.body + "\n" if n.body else "") + \
+            "client email dismissed by operator"
+        db.commit()
+    return True
+
+
+def held_count(session_factory) -> int:
+    with session_factory() as db:
+        return (db.query(Notification)
+                .filter(Notification.held_at.isnot(None),
+                        Notification.client_action.is_(None)).count())
+
+
+def _without_notes(body: str) -> str:
+    """Strip the delivery-note block appended by create_notification, so a
+    released email carries the original text only."""
+    lines = [ln for ln in (body or "").splitlines()
+             if not ln.startswith(("delivered:", "notification_delivery_failed",
+                                   "client email held", "client email dismissed"))]
+    return "\n".join(lines).strip()
 
 
 def _send_email(cfg: dict[str, Any], title: str, body: str) -> str | None:
