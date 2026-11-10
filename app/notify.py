@@ -158,8 +158,32 @@ def dismiss_held(session_factory, notification_id: str) -> bool:
         n.client_action, n.held_at = "dismissed", None
         n.body = (n.body + "\n" if n.body else "") + \
             "client email dismissed by operator"
+        if n.kind == "outage" and n.test_id:
+            # Its recovery may already be waiting (both held at once); a
+            # recovery notice for an outage the client never got is confusing.
+            for r in _held_recoveries_of(db, n):
+                r.client_action, r.held_at = "dismissed", None
+                r.body = (r.body + "\n" if r.body else "") + \
+                    "client email dismissed automatically: the matching " \
+                    "outage was never sent to the client"
         db.commit()
     return True
+
+
+def _held_recoveries_of(db, outage: Notification) -> list[Notification]:
+    """Held `recovered` rows for the same test that came after this outage
+    and before the next one — the recoveries that belong to it."""
+    q = db.query(Notification).filter(
+        Notification.test_id == outage.test_id,
+        Notification.created_at > outage.created_at)
+    nxt = (q.filter(Notification.kind == "outage")
+           .order_by(Notification.created_at.asc()).first())
+    rec = q.filter(Notification.kind == "recovered",
+                   Notification.held_at.isnot(None),
+                   Notification.client_action.is_(None))
+    if nxt is not None:
+        rec = rec.filter(Notification.created_at < nxt.created_at)
+    return rec.all()
 
 
 def held_count(session_factory) -> int:

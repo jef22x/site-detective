@@ -97,11 +97,11 @@ class Scheduler:
 
     def start(self):
         self._advance_overdue()
-        self._resolve_stale_confirmations()
         threading.Thread(target=self._loop, name="scheduler", daemon=True).start()
-        if self.fire_confirmation is not None:
-            threading.Thread(target=self._confirm_loop, name="confirmations",
-                             daemon=True).start()
+        # Leftover confirmations are settled in this thread, not here: settling
+        # can send email, and a slow mail server must not hold up app startup.
+        threading.Thread(target=self._confirm_loop, name="confirmations",
+                         daemon=True).start()
 
     def stop(self):
         self._stop.set()
@@ -135,6 +135,11 @@ class Scheduler:
             prune_notifications(self.session_factory)
 
     def _confirm_loop(self):
+        # Runs before this thread fires anything, so no confirmation run can
+        # be in flight yet — which is what makes settling leftovers safe.
+        self._resolve_stale_confirmations()
+        if self.fire_confirmation is None:
+            return
         while not self._stop.wait(CONFIRM_POLL_SECONDS):
             try:
                 self.check_confirmations()
@@ -146,36 +151,67 @@ class Scheduler:
         cannot start resolves the original failure as confirmed — delaying a
         real outage alert is worse than an occasional unconfirmed flake."""
         for row in alerting.due_confirmations(self.session_factory):
-            test_id, origin = row["test_id"], row["origin_run_id"]
-            test_file = self.resolve_test(test_id)
-            if test_file is None:
-                self._confirm_failed(test_id, origin,
-                                     "no test file resolves to this id any more, "
-                                     "so the failure was taken at face value")
-                continue
             try:
-                run_id = self.fire_confirmation(test_file)
-            except BusyError as e:
-                self._confirm_failed(test_id, origin,
-                                     f"the confirmation re-run could not start "
-                                     f"({e}), so the failure was taken at face value")
-            except Exception as e:
-                log_error(f"confirmation run for '{test_id}' failed to start: "
+                self._check_one(row)
+            except Exception as e:  # one bad row must not block the others
+                log_error(f"confirmation for '{row['test_id']}' crashed: "
                           f"{type(e).__name__}: {e}")
-                self._confirm_failed(test_id, origin,
-                                     "the confirmation re-run could not start, "
-                                     "so the failure was taken at face value")
-            else:
-                alerting.mark_fired(self.session_factory, test_id, run_id)
+
+    def _check_one(self, row: dict):
+        test_id, origin = row["test_id"], row["origin_run_id"]
+        test_file = self.resolve_test(test_id)
+        if test_file is None:
+            self._confirm_failed(test_id, origin,
+                                 "no test file resolves to this id any more, "
+                                 "so the failure was taken at face value")
+            return
+        try:
+            run_id = self.fire_confirmation(test_file)
+        except BusyError as e:
+            self._confirm_failed(test_id, origin,
+                                 f"the confirmation re-run could not start "
+                                 f"({e}), so the failure was taken at face value")
+        except Exception as e:
+            log_error(f"confirmation run for '{test_id}' failed to start: "
+                      f"{type(e).__name__}: {e}")
+            self._confirm_failed(test_id, origin,
+                                 "the confirmation re-run could not start, "
+                                 "so the failure was taken at face value")
+        else:
+            alerting.mark_fired(self.session_factory, test_id, run_id)
 
     def _resolve_stale_confirmations(self):
-        """Startup: a confirmation whose run never finished died with the
-        process. Its originating failure is still undecided, so decide it."""
-        for row in alerting.stale_confirmations(self.session_factory):
-            self._confirm_failed(
-                row["test_id"], row["fired_run_id"] or row["origin_run_id"],
-                "the confirmation re-run was interrupted by a restart, so the "
-                "failure was taken at face value")
+        """Startup: settle confirmations a restart left behind. A run that
+        never finished died with the process, so its failure is taken at face
+        value; a run that finished but was never applied gets its own result
+        applied now. Every row is handled on its own and nothing here may
+        raise — this runs once, and a crash would skip the confirm loop."""
+        try:
+            stale = alerting.stale_confirmations(self.session_factory)
+            unsettled = alerting.unsettled_confirmations(self.session_factory)
+        except Exception as e:
+            log_error(f"could not read leftover confirmations: "
+                      f"{type(e).__name__}: {e}")
+            return
+        for row in stale:
+            try:
+                self._confirm_failed(
+                    row["test_id"], row["fired_run_id"] or row["origin_run_id"],
+                    "the confirmation re-run was interrupted by a restart, so "
+                    "the failure was taken at face value")
+            except Exception as e:
+                log_error(f"could not settle the interrupted confirmation for "
+                          f"'{row['test_id']}': {type(e).__name__}: {e}")
+        for row in unsettled:
+            try:
+                alerting.settle_finished_confirmation(
+                    self.session_factory, self.cfg_loader(),
+                    test_id=row["test_id"], run_id=row["fired_run_id"],
+                    status=row["status"],
+                    test_name=self.resolve_name(row["test_id"]))
+            except Exception as e:
+                log_error(f"could not apply the finished confirmation for "
+                          f"'{row['test_id']}': {type(e).__name__}: {e}")
 
     def _confirm_failed(self, test_id: str, run_id: str | None, reason: str):
         alerting.resolve_as_confirmed(

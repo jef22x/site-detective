@@ -213,6 +213,45 @@ def stale_confirmations(session_factory) -> list[dict]:
     return out
 
 
+def unsettled_confirmations(session_factory) -> list[dict]:
+    """Confirmations whose run finished but whose result was never applied —
+    the process died (or the bookkeeping failed) between the run ending and
+    `_finalize_run` deleting the row. Left alone, the row would make every
+    later failure skip its re-run. Only safe to call when no run is in
+    flight (startup): a live run is "finished" in the database a moment
+    before its own finalizer gets to it."""
+    out = []
+    with session_factory() as db:
+        for row in db.query(PendingConfirmation).filter(
+                PendingConfirmation.fired_run_id.isnot(None)).all():
+            run = db.get(Run, row.fired_run_id)
+            if run is not None and run.status in FINISHED_STATUSES:
+                out.append({"test_id": row.test_id,
+                            "fired_run_id": row.fired_run_id,
+                            "status": run.status})
+    return out
+
+
+def settle_finished_confirmation(session_factory, cfg: dict[str, Any], *,
+                                 test_id: str, run_id: str, status: str,
+                                 test_name: str | None = None,
+                                 notifier=None) -> Decision | None:
+    """Apply a finished confirmation's own result after the fact. A result
+    that says nothing (a skipped run) settles it as confirmed, like any
+    confirmation that could not answer the question."""
+    note = "This confirmation result was applied after a restart."
+    dec = record_run(session_factory, cfg, test_id=test_id, run_id=run_id,
+                     status=status, trigger="confirmation", test_name=test_name,
+                     note=note, notifier=notifier)
+    if dec is None:
+        dec = resolve_as_confirmed(
+            session_factory, cfg, test_id=test_id, run_id=run_id,
+            reason="the confirmation re-run gave no result, so the failure "
+                   "was taken at face value",
+            test_name=test_name, notifier=notifier)
+    return dec
+
+
 def resolve_as_confirmed(session_factory, cfg: dict[str, Any], *, test_id: str,
                          run_id: str | None, reason: str,
                          test_name: str | None = None,

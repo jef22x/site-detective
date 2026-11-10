@@ -386,6 +386,38 @@ def test_a_sent_outage_still_holds_its_recovery(sf, live_cfg, delivery):
     assert delivery["email"] == ["Checkout is down", "Checkout recovered"]
 
 
+def test_dismissing_a_held_outage_also_dismisses_its_held_recovery(sf, live_cfg, delivery):
+    """Both can be waiting at once; dismissing the outage settles the pair."""
+    live_cfg["alerting"] = {"client_email": "manual"}
+    oid = notify.create_notification(sf, live_cfg, kind="outage", severity="error",
+                                     title="Checkout is down", test_id="checkout")
+    rid = notify.create_notification(sf, live_cfg, kind="recovered", severity="info",
+                                     title="Checkout recovered", test_id="checkout")
+    other = notify.create_notification(sf, live_cfg, kind="recovered", severity="info",
+                                       title="Cart recovered", test_id="cart")
+    assert notify.held_count(sf) == 3
+    assert notify.dismiss_held(sf, oid) is True
+    with sf() as db:
+        assert db.get(Notification, rid).client_action == "dismissed"
+        assert db.get(Notification, other).client_action is None  # other test
+    assert notify.held_count(sf) == 1
+    assert notify.deliver_held(sf, live_cfg, rid)[0] is False
+    assert delivery["email"] == []
+
+
+def test_dismissing_an_old_outage_leaves_a_later_outages_recovery(sf, live_cfg, delivery):
+    live_cfg["alerting"] = {"client_email": "manual"}
+    old = notify.create_notification(sf, live_cfg, kind="outage", severity="error",
+                                     title="down 1", test_id="checkout")
+    notify.create_notification(sf, live_cfg, kind="outage", severity="error",
+                               title="down 2", test_id="checkout")
+    rid = notify.create_notification(sf, live_cfg, kind="recovered", severity="info",
+                                     title="up 2", test_id="checkout")
+    notify.dismiss_held(sf, old)
+    with sf() as db:
+        assert db.get(Notification, rid).client_action is None
+
+
 def test_a_held_email_cannot_be_released_with_email_switched_off(sf, live_cfg, delivery):
     """`email_notifications` outranks the triage button (spec §4.3 precedence)."""
     live_cfg["alerting"] = {"client_email": "manual"}
@@ -571,3 +603,75 @@ def test_a_vanished_test_file_confirms_the_failure(sf, cfg, sent, notifier, monk
     sched.check_confirmations()
     assert [n["kind"] for n in sent] == ["outage"]
     assert "no test file resolves" in sent[0]["body"]
+
+
+def test_a_finished_but_unapplied_confirmation_is_settled_at_startup(
+        sf, cfg, sent, notifier, monkeypatch):
+    """The confirmation run finished but its result never reached the alert
+    state. Without settling, the row would make every later failure skip its
+    re-run."""
+    monkeypatch.setattr("app.alerting.create_notification", notifier)
+    record(sf, cfg, notifier, status="passed")
+    record(sf, cfg, notifier, status="failed")
+    with sf() as db:
+        db.add(Run(id="run-c", test_id="checkout", status="passed"))
+        db.commit()
+    alerting.mark_fired(sf, "checkout", "run-c")
+    _scheduler(sf, cfg, test_file=None, fire=None)._resolve_stale_confirmations()
+    assert [(n["kind"], n["audience"]) for n in sent] == [("flaky", "operator")]
+    assert "after a restart" in sent[0]["body"]
+    with sf() as db:
+        assert db.query(PendingConfirmation).count() == 0
+        assert db.get(AlertState, "checkout").state == "passing"
+
+
+def test_a_finished_failed_confirmation_raises_the_outage_at_startup(
+        sf, cfg, sent, notifier, monkeypatch):
+    monkeypatch.setattr("app.alerting.create_notification", notifier)
+    record(sf, cfg, notifier, status="passed")
+    record(sf, cfg, notifier, status="failed")
+    with sf() as db:
+        db.add(Run(id="run-c", test_id="checkout", status="failed"))
+        db.commit()
+    alerting.mark_fired(sf, "checkout", "run-c")
+    _scheduler(sf, cfg, test_file=None, fire=None)._resolve_stale_confirmations()
+    assert [(n["kind"], n["audience"]) for n in sent] == [("outage", None)]
+    with sf() as db:
+        assert db.get(AlertState, "checkout").state == "failing"
+
+
+def test_startup_cleanup_never_raises(sf, cfg, monkeypatch):
+    logged = []
+    monkeypatch.setattr("app.scheduling.log_error", logged.append)
+
+    def boom(_sf):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(alerting, "stale_confirmations", boom)
+    _scheduler(sf, cfg, test_file=None, fire=None)._resolve_stale_confirmations()
+    assert logged and "database is locked" in logged[0]
+
+
+def test_one_bad_confirmation_does_not_block_the_others(sf, cfg, tmp_path, monkeypatch):
+    from app.scheduling import Scheduler
+    logged, fired = [], []
+    monkeypatch.setattr("app.scheduling.log_error", logged.append)
+    quiet = lambda *a, **k: None  # noqa: E731
+    for tid in ("broken", "checkout"):
+        record(sf, cfg, quiet, test_id=tid, status="passed")
+        record(sf, cfg, quiet, test_id=tid, status="failed")
+    with sf() as db:
+        for row in db.query(PendingConfirmation).all():
+            row.due_at = _now() - timedelta(seconds=1)
+        db.commit()
+
+    def resolve(tid):
+        if tid == "broken":
+            raise RuntimeError("bad test index")
+        return tmp_path / f"{tid}.yaml"
+
+    sched = Scheduler(sf, lambda: cfg, resolve, fire=None, reports_dir=None,
+                      fire_confirmation=lambda f: fired.append(f.stem) or "run-c")
+    sched.check_confirmations()
+    assert fired == ["checkout"]
+    assert any("broken" in m and "bad test index" in m for m in logged)

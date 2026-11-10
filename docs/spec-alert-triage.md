@@ -343,10 +343,26 @@ A second scheduler thread polls every `CONFIRM_POLL_SECONDS` (10 — the
   `BusyError` or a missing test file resolves it as *confirmed* instead.
 - row resolved (the confirmation run finished) → deleted by `_finalize_run`.
 
-On scheduler start, any row that already has a `fired_run_id` whose run is not
-in a finished state is a crash leftover: it resolves as *confirmed*, emitting
-the outage that the interrupted confirmation was supposed to decide. Rows that
-had not fired yet simply fire when due.
+On scheduler start, rows left behind by a restart are settled:
+
+- a row with a `fired_run_id` whose run is **not** finished: the confirmation
+  died with the process. It resolves as *confirmed*, emitting the outage that
+  the interrupted confirmation was supposed to decide.
+- a row with a `fired_run_id` whose run **is** finished: the run ended but its
+  result was never applied (the process died, or the bookkeeping failed,
+  before `_finalize_run` deleted the row). That run's own result is applied
+  now — a pass is `flaky`, a failure is the `outage`, a result-less (skipped)
+  run counts as *confirmed*. Left in place, such a row would make every later
+  failure of the test skip its re-run.
+- rows that had not fired yet simply fire when due.
+
+This settling runs once at the start of the confirmations thread, not inside
+`Scheduler.start()`: it can send email, and a slow mail server must not hold
+up app startup. It also runs before that thread fires anything, so no
+confirmation run can be in flight — which is what makes "run finished" a
+reliable leftover signal. Every row is settled on its own; an error on one is
+logged and never stops the others, and the same holds for each poll of due
+confirmations.
 
 ### Acceptance criteria
 
@@ -382,6 +398,9 @@ New mode: `alerting.client_email: manual`.
   recovery notice for an unknown outage is confusing. "Matching" = the most
   recent `outage` row for that `test_id`; an outage still held (no
   `client_action`) counts as *not yet dismissed*, so its recovery is held too.
+  If both are held and the operator then dismisses the outage, its held
+  recovery (same `test_id`, created after it and before the next `outage`) is
+  dismissed with it.
 - Held-and-forgotten guard: a persistent banner while any notification is held.
   It lives in `base.html` (driven by the existing `/api/status` poll) rather
   than only on the dashboard, so a 2 AM outage the operator slept through is
@@ -421,7 +440,7 @@ Landed in: `app/alerting.py` (new), `app/notify.py` (routing + triage),
 `PendingConfirmation`, notification columns), `app/main.py` (`_finalize_run`,
 `_fire_confirmation`, triage routes), `app/scheduling.py` (confirm loop),
 templates (badges, banner, triage buttons, config dropdowns),
-`unit_tests/test_alerting.py` (61 test cases).
+`unit_tests/test_alerting.py` (67 test cases).
 
 The compiled Tailwind stylesheet was **not** rebuilt (`build-css.ps1` needs the
 Windows CLI binary): every new class was checked against the committed
