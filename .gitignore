@@ -23,7 +23,12 @@ htmlcov/
 data/
 reports/
 logs/
-tests/
+
+# Your own test YAMLs stay local; the two mock fixtures the suite needs are
+# tracked. `tests/*` (not `tests/`) so git still descends and sees them.
+tests/*
+!tests/mock-shop-purchase.yaml
+!tests/mock-full-lifecycle.yaml
 
 # Environment / secrets
 .env

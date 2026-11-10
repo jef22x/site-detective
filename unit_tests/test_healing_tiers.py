@@ -1,7 +1,6 @@
 """Tiered healing (spec: docs/spec-healing-tiers.md)."""
 from pathlib import Path
 
-from app.config import mask_secrets
 from app.db import ElementFingerprint, HealingEvent, init_db
 from app.runner import healing
 from app.runner.executor import _intent_needles, run_test
